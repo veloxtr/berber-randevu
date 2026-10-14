@@ -16,7 +16,19 @@ Veriler berber.db dosyasinda tutulur.
 
 YEDEK: berber.db dosyasini kopyalamak yeterlidir. Yeni bilgisayarda ayni dosyayi koyunca her sey gelir.
 
+YETKILI GIRISI (PIN)
+- Ayarlar (disli simgesi) ve Hakedis (saat simgesi / sol menu) sadece PIN ile acilir.
+  Ilk acilista PIN belirlersiniz (4-12 rakam). 30 dk islem yapilmazsa oturum kapanir.
+- Ayarlar: berber ekle/cikar/ad degistir + berber basina hakedis orani (%), hizmet ve fiyatlar,
+  dukkan adi ve calisma saatleri, PIN degistirme.
+- Hakedis: secilen tarih araliginda sadece "Geldi" isaretli islerden berber basina ciro,
+  hakedis (ciro x oran) ve dukkan payi. Satira tiklayinca islemler acilir. CSV olarak indirilir.
+- PIN unutulursa: programi kapatin, program klasorune bos bir PIN_SIFIRLA.txt dosyasi koyup
+  yeniden acin; PIN silinir, yenisini belirlersiniz. Randevu verileri etkilenmez.
+
 TAKVIM
+- Sol menuden bir berbere tiklayinca sadece onun takvimi gorunur (tekrar tiklayinca hepsi).
+- Her randevu kutusunda saat, musteri, hizmet ve tutar (TL) gorunur; renk berbere gore, yesil = geldi.
 - Bos bir saate tiklayin: yeni randevu. Dolu kutuya tiklayin: duzenle / geldi / gelmedi / iptal.
 - Ayni berberde cakisan randevuya izin verilmez; farkli berberlerde ayni saat serbesttir.
 - Hizmet secince sure ve ucret otomatik dolar, elle de degistirebilirsiniz.

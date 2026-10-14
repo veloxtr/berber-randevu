@@ -5,8 +5,12 @@
     python app.py --ag       -> aynı ağdaki telefonlardan da erişilir
 """
 import argparse
+import functools
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -93,6 +97,8 @@ VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukk
 def baslat_db():
     c = sqlite3.connect(DB_YOLU)
     c.executescript(SEMA)
+    if "hakedis_oran" not in [r[1] for r in c.execute("PRAGMA table_info(berberler)")]:
+        c.execute("ALTER TABLE berberler ADD COLUMN hakedis_oran REAL NOT NULL DEFAULT 50")
     for k, v in VARSAYILAN_AYAR.items():
         c.execute("INSERT OR IGNORE INTO ayarlar(anahtar, deger) VALUES (?, ?)", (k, v))
     if c.execute("SELECT COUNT(*) FROM berberler").fetchone()[0] == 0:
@@ -124,8 +130,72 @@ def hata(mesaj, kod=400):
     return jsonify({"hata": mesaj}), kod
 
 
-def ayarlar():
+def ayar_ham():
     return {r["anahtar"]: r["deger"] for r in db().execute("SELECT * FROM ayarlar")}
+
+
+def ayarlar():
+    """Dışarı verilen ayarlar: PIN bilgileri asla dahil edilmez."""
+    return {k: v for k, v in ayar_ham().items() if not k.startswith("pin_")}
+
+
+def ayar_yaz(k, v):
+    db().execute("INSERT OR REPLACE INTO ayarlar(anahtar, deger) VALUES (?, ?)", (k, v))
+    db().commit()
+
+
+# ------------------------------------------------------------ yetkili (PIN) girişi
+TOKEN_SURE = 30 * 60              # 30 dk işlem yapılmazsa oturum kapanır
+_tokenlar = {}                    # jeton -> bitiş zamanı
+_kilit = {"hata": 0, "bitis": 0.0}
+
+
+def pin_hash(pin, tuz_hex):
+    return hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(tuz_hex), 120_000).hex()
+
+
+def pin_var():
+    return bool(ayar_ham().get("pin_hash"))
+
+
+def pin_belirle(pin):
+    tuz = secrets.token_hex(16)
+    ayar_yaz("pin_salt", tuz)
+    ayar_yaz("pin_hash", pin_hash(pin, tuz))
+
+
+def pin_dogru(pin):
+    a = ayar_ham()
+    return bool(a.get("pin_hash")) and hmac.compare_digest(pin_hash(pin, a["pin_salt"]), a["pin_hash"])
+
+
+def token_uret():
+    t = secrets.token_urlsafe(24)
+    _tokenlar[t] = time.time() + TOKEN_SURE
+    return t
+
+
+def yetkili_mi():
+    t = request.headers.get("X-Yetkili", "")
+    bit = _tokenlar.get(t)
+    if bit and bit > time.time():
+        _tokenlar[t] = time.time() + TOKEN_SURE
+        return True
+    _tokenlar.pop(t, None)
+    return False
+
+
+def yetkili_gerekli(f):
+    @functools.wraps(f)
+    def sar(*a, **k):
+        if not yetkili_mi():
+            return jsonify({"hata": "Bu işlem için yetkili girişi gerekli.", "kod": "yetki"}), 401
+        return f(*a, **k)
+    return sar
+
+
+def pin_gecerli_mi(pin):
+    return pin.isdigit() and 4 <= len(pin) <= 12
 
 
 def cakisma_var(berber_id, tarih, baslangic, sure_dk, haric_id=None):
@@ -196,6 +266,62 @@ def anasayfa():
     return send_from_directory(STATIK, "index.html")
 
 
+@app.get("/api/yetkili/durum")
+def y_durum():
+    return jsonify({"pin_var": pin_var(), "acik": yetkili_mi()})
+
+
+@app.post("/api/yetkili/kur")
+def y_kur():
+    """İlk kurulum: PIN henüz yoksa belirlenir. PIN varken çalışmaz."""
+    if pin_var():
+        return hata("PIN zaten belirlenmiş.", 403)
+    pin = str((request.get_json(force=True, silent=True) or {}).get("pin", "")).strip()
+    if not pin_gecerli_mi(pin):
+        return hata("PIN 4-12 haneli rakam olmalı.")
+    pin_belirle(pin)
+    return jsonify({"token": token_uret()})
+
+
+@app.post("/api/yetkili/giris")
+def y_giris():
+    kalan = _kilit["bitis"] - time.time()
+    if kalan > 0:
+        return hata(f"Çok fazla hatalı deneme. {int(kalan) + 1} sn sonra tekrar deneyin.", 429)
+    if not pin_var():
+        return hata("Önce PIN belirlenmeli.", 409)
+    pin = str((request.get_json(force=True, silent=True) or {}).get("pin", "")).strip()
+    if pin_dogru(pin):
+        _kilit["hata"] = 0
+        return jsonify({"token": token_uret()})
+    _kilit["hata"] += 1
+    if _kilit["hata"] >= 5:
+        _kilit.update(hata=0, bitis=time.time() + 30)
+    return hata("PIN yanlış.", 403)
+
+
+@app.post("/api/yetkili/cikis")
+def y_cikis():
+    _tokenlar.pop(request.headers.get("X-Yetkili", ""), None)
+    return jsonify({"tamam": True})
+
+
+@app.post("/api/yetkili/pin")
+@yetkili_gerekli
+def y_pin_degistir():
+    v = request.get_json(force=True, silent=True) or {}
+    if not pin_dogru(str(v.get("eski", "")).strip()):
+        return hata("Eski PIN yanlış.", 403)
+    yeni = str(v.get("yeni", "")).strip()
+    if not pin_gecerli_mi(yeni):
+        return hata("Yeni PIN 4-12 haneli rakam olmalı.")
+    pin_belirle(yeni)
+    gecerli = request.headers.get("X-Yetkili", "")
+    for t in [t for t in _tokenlar if t != gecerli]:   # diğer oturumları kapat
+        _tokenlar.pop(t, None)
+    return jsonify({"tamam": True})
+
+
 # ------------------------------------------------------------------- ayarlar
 @app.get("/api/ayarlar")
 def ayar_getir():
@@ -203,6 +329,7 @@ def ayar_getir():
 
 
 @app.put("/api/ayarlar")
+@yetkili_gerekli
 def ayar_kaydet():
     v = request.get_json(force=True, silent=True) or {}
     yeni = ayarlar()
@@ -229,32 +356,57 @@ def ayar_kaydet():
 
 
 # ------------------------------------------------------------------ berberler
+def oran_oku(v, varsayilan=None):
+    """Hakediş oranı 0-100 arası sayı olmalı."""
+    ham = v.get("hakedis_oran", varsayilan)
+    try:
+        o = float(ham)
+    except (TypeError, ValueError):
+        return None, "Hakediş oranı sayı olmalı."
+    if not 0 <= o <= 100:
+        return None, "Hakediş oranı 0 ile 100 arasında olmalı."
+    return o, None
+
+
 @app.get("/api/berberler")
 def berber_liste():
-    return jsonify(satirlar(db().execute("SELECT * FROM berberler WHERE aktif=1 ORDER BY id")))
+    # Hakediş oranı sadece yetkili girişinde görünür.
+    kolon = "id, ad, aktif, hakedis_oran" if yetkili_mi() else "id, ad, aktif"
+    return jsonify(satirlar(db().execute(f"SELECT {kolon} FROM berberler WHERE aktif=1 ORDER BY id")))
 
 
 @app.post("/api/berberler")
+@yetkili_gerekli
 def berber_ekle():
-    ad = ((request.get_json(force=True, silent=True) or {}).get("ad") or "").strip()
+    v = request.get_json(force=True, silent=True) or {}
+    ad = (v.get("ad") or "").strip()
     if not ad:
         return hata("Ad gerekli.")
-    cur = db().execute("INSERT INTO berberler(ad) VALUES (?)", (ad,))
+    oran, e = oran_oku(v, 50)
+    if e:
+        return hata(e)
+    cur = db().execute("INSERT INTO berberler(ad, hakedis_oran) VALUES (?, ?)", (ad, oran))
     db().commit()
-    return jsonify({"id": cur.lastrowid, "ad": ad, "aktif": 1}), 201
+    return jsonify({"id": cur.lastrowid, "ad": ad, "aktif": 1, "hakedis_oran": oran}), 201
 
 
 @app.put("/api/berberler/<int:bid>")
+@yetkili_gerekli
 def berber_guncelle(bid):
-    ad = ((request.get_json(force=True, silent=True) or {}).get("ad") or "").strip()
+    v = request.get_json(force=True, silent=True) or {}
+    ad = (v.get("ad") or "").strip()
     if not ad:
         return hata("Ad gerekli.")
-    db().execute("UPDATE berberler SET ad=? WHERE id=?", (ad, bid))
+    oran, e = oran_oku(v, 50)
+    if e:
+        return hata(e)
+    db().execute("UPDATE berberler SET ad=?, hakedis_oran=? WHERE id=?", (ad, oran, bid))
     db().commit()
-    return jsonify({"id": bid, "ad": ad})
+    return jsonify({"id": bid, "ad": ad, "hakedis_oran": oran})
 
 
 @app.delete("/api/berberler/<int:bid>")
+@yetkili_gerekli
 def berber_sil(bid):
     # Geçmiş randevular bozulmasın diye silmek yerine pasife alınır.
     if db().execute("SELECT COUNT(*) FROM berberler WHERE aktif=1").fetchone()[0] <= 1:
@@ -291,6 +443,7 @@ def hizmet_dogrula(v):
 
 
 @app.post("/api/hizmetler")
+@yetkili_gerekli
 def hizmet_ekle():
     t, e = hizmet_dogrula(request.get_json(force=True, silent=True) or {})
     if e:
@@ -301,6 +454,7 @@ def hizmet_ekle():
 
 
 @app.put("/api/hizmetler/<int:hid>")
+@yetkili_gerekli
 def hizmet_guncelle(hid):
     t, e = hizmet_dogrula(request.get_json(force=True, silent=True) or {})
     if e:
@@ -311,6 +465,7 @@ def hizmet_guncelle(hid):
 
 
 @app.delete("/api/hizmetler/<int:hid>")
+@yetkili_gerekli
 def hizmet_sil(hid):
     db().execute("UPDATE hizmetler SET aktif=0 WHERE id=?", (hid,))
     db().commit()
@@ -419,7 +574,53 @@ def ozet():
     )
     satir = satirlar(cur)
     toplam = {k: sum(s[k] for s in satir) for k in ("geldi", "bekliyor", "gelmedi", "iptal", "kazanc", "beklenen")}
+    return jsonify({"toplam": toplam})   # berber bazlı kırılım hakediş ekranında (yetkili)
+
+
+# ------------------------------------------------------------------- hakediş
+@app.get("/api/hakedis")
+@yetkili_gerekli
+def hakedis():
+    """Sadece 'geldi' işaretli randevular sayılır. Hakediş = ciro x berberin oranı."""
+    bas = request.args.get("bas")
+    bit = request.args.get("bit") or bas
+    if not bas:
+        return hata("bas gerekli.")
+    cur = db().execute(
+        """SELECT b.id AS berber_id, b.ad AS berber, b.hakedis_oran AS oran,
+                  COUNT(r.id) AS adet, COALESCE(SUM(r.ucret), 0) AS ciro
+           FROM berberler b
+           LEFT JOIN randevular r ON r.berber_id=b.id AND r.durum='geldi' AND r.tarih BETWEEN ? AND ?
+           WHERE b.aktif=1 OR r.id IS NOT NULL
+           GROUP BY b.id ORDER BY b.id""",
+        (bas, bit),
+    )
+    satir = satirlar(cur)
+    for s in satir:
+        s["hakedis"] = round(s["ciro"] * s["oran"] / 100, 2)
+        s["dukkan"] = round(s["ciro"] - s["hakedis"], 2)
+    toplam = {k: round(sum(s[k] for s in satir), 2) for k in ("adet", "ciro", "hakedis", "dukkan")}
     return jsonify({"berberler": satir, "toplam": toplam})
+
+
+@app.get("/api/hakedis/detay")
+@yetkili_gerekli
+def hakedis_detay():
+    bas = request.args.get("bas")
+    bit = request.args.get("bit") or bas
+    try:
+        bid = int(request.args.get("berber_id"))
+    except (TypeError, ValueError):
+        return hata("berber_id gerekli.")
+    if not bas:
+        return hata("bas gerekli.")
+    cur = db().execute(
+        """SELECT tarih, baslangic, musteri_ad, hizmetler, ucret FROM randevular
+           WHERE berber_id=? AND durum='geldi' AND tarih BETWEEN ? AND ?
+           ORDER BY tarih, baslangic""",
+        (bid, bas, bit),
+    )
+    return jsonify(satirlar(cur))
 
 
 # --------------------------------------------------------------- program bilgisi
@@ -489,6 +690,7 @@ def guncelleme_durum():
 
 
 @app.post("/api/guncelleme/uygula")
+@yetkili_gerekli
 def guncelleme_uygula():
     if not getattr(sys, "frozen", False):
         return hata("Otomatik güncelleme sadece exe sürümünde çalışır.")
@@ -593,6 +795,17 @@ def main():
     baslat_db()
     app.config["AG"] = a.ag
     app.config["PORT"] = a.port
+    # PIN unutulursa: exe'nin yanına PIN_SIFIRLA.txt adlı boş bir dosya koyup programı açın.
+    sifirla = os.path.join(TEMEL, "PIN_SIFIRLA.txt")
+    if os.path.exists(sifirla):
+        c = sqlite3.connect(DB_YOLU)
+        c.execute("DELETE FROM ayarlar WHERE anahtar IN ('pin_hash', 'pin_salt')")
+        c.commit()
+        c.close()
+        try:
+            os.remove(sifirla)
+        except OSError:
+            pass
     try:  # önceki güncellemeden kalan eski exe'yi temizle
         if getattr(sys, "frozen", False) and os.path.exists(sys.executable + ".eski"):
             os.remove(sys.executable + ".eski")
