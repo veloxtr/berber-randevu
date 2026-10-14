@@ -1,0 +1,39 @@
+BERBER RANDEVU TAKIP
+====================
+
+KURULUM (bir kez)
+1) Bilgisayarda Python 3.10+ kurulu olmali (python.org; kurarken "Add to PATH" kutusunu isaretleyin).
+2) Bu klasorde komut satirini acip:   pip install -r requirements.txt
+
+KULLANIM
+- baslat.bat          : programi acar, tarayicida otomatik acilir (sadece bu bilgisayar).
+- baslat_telefon.bat  : ayni Wi-Fi'deki telefonlardan da acilir.
+                        Telefonda  http://BILGISAYAR-IP:5050  yazin.
+                        Windows guvenlik duvari sorarsa "Ozel ag"a izin verin.
+
+NOT: Telefon baglanabilsin diye bilgisayar acik ve program calisiyor olmali.
+Veriler berber.db dosyasinda tutulur.
+
+YEDEK: berber.db dosyasini kopyalamak yeterlidir. Yeni bilgisayarda ayni dosyayi koyunca her sey gelir.
+
+TAKVIM
+- Bos bir saate tiklayin: yeni randevu. Dolu kutuya tiklayin: duzenle / geldi / gelmedi / iptal.
+- Ayni berberde cakisan randevuya izin verilmez; farkli berberlerde ayni saat serbesttir.
+- Hizmet secince sure ve ucret otomatik dolar, elle de degistirebilirsiniz.
+- Ozet sekmesi: berber bazinda gelen/gelmeyen sayisi, kazanc ve beklenen ciro.
+- Musteri adi yazarken eski musteriler onerilir, telefon otomatik gelir.
+
+EXE URETMEK (Python kurmadan calisan tek dosya)
+1) GitHub'da yeni bir depo ac (private olabilir), bu klasorun TUM icerigini yukle
+   (.github klasoru dahil; gizli klasor oldugu icin yuklemeyi unutma).
+2) GitHub bunu otomatik derler: Actions sekmesi -> "Release" isi yesil olunca
+   sag taraftaki Releases bolumunden BerberRandevu.exe indirilir.
+3) exe'yi dukkan bilgisayarina koyup cift tikla. berber.db exe'nin yanina olusur.
+   Telefon icin:  BerberRandevu.exe --ag  kisayolu olusturabilirsiniz.
+4) Yeni surum: version.py icindeki VERSION'u artirip main'e gonder, GitHub yeniden derler.
+   (Elle derlemek icin Windows'ta:  pip install pyinstaller  ve  python build.py)
+
+ILERIDE
+- Sunucu (app.py) ve arayuz (static/index.html) ayridir; internete tasimak veya
+  WhatsApp hatirlatma eklemek icin yapi hazirdir.
+- Guvenlik: --ag modu sifre istemez, sadece guvendiginiz ag icin kullanin.
