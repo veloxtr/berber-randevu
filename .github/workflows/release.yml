@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "version.py"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sürümü oku
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path version.py -Pattern '^VERSION = "(.+)"').Matches[0].Groups[1].Value
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Sürüm: $v"
+
+      - name: Paketler
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Derle
+        run: python build.py
+
+      - name: Boyut
+        shell: pwsh
+        run: |
+          Write-Host ("Exe boyutu: {0:N1} MB" -f ((Get-Item dist/BerberRandevu.exe).Length / 1MB))
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Berber Randevu v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: dist/BerberRandevu.exe
+          generate_release_notes: true
+          make_latest: true
