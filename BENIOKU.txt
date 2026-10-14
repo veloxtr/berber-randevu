@@ -28,9 +28,18 @@ EXE URETMEK (Python kurmadan calisan tek dosya)
    (.github klasoru dahil; gizli klasor oldugu icin yuklemeyi unutma).
 2) GitHub bunu otomatik derler: Actions sekmesi -> "Release" isi yesil olunca
    sag taraftaki Releases bolumunden BerberRandevu.exe indirilir.
-3) exe'yi dukkan bilgisayarina koyup cift tikla. berber.db exe'nin yanina olusur.
-   Telefon icin:  BerberRandevu.exe --ag  kisayolu olusturabilirsiniz.
-4) Yeni surum: version.py icindeki VERSION'u artirip main'e gonder, GitHub yeniden derler.
+3) exe'yi dukkan bilgisayarina koyup cift tikla. Program kendi penceresinde acilir
+   (siyah konsol yok); pencereyi kapatinca program tamamen kapanir.
+   berber.db exe'nin yanina olusur. Pencere icin Edge veya Chrome kurulu olmalidir
+   (Windows 10/11'de Edge zaten vardir).
+   Telefon icin: exe kisayolunun Ozellikler > Hedef satirinin sonuna  --ag  ekleyin.
+   Telefon adresi Ayarlar sekmesinde yazar. Telefon calissin diye pencere acik kalmali.
+4) ONLINE GUNCELLEME: program acilirken GitHub'daki son surume bakar. Yeni surum varsa ustte
+   sari bir serit cikar, "Simdi guncelle"ye basinca yeni exe iner, program kendini yenileyip
+   yeniden acilir (berber.db'ye dokunmaz). Ayarlar > "Guncellemeyi kontrol et" ile elle de bakilir.
+   Bunun calismasi icin GitHub deposu PUBLIC (acik) olmalidir; depoda sifre/anahtar yoktur.
+   Depo adi app.py icindeki GUNCELLEME_REPO satirindadir (veloxtr/berber-randevu).
+5) Yeni surum: version.py icindeki VERSION'u artirip main'e gonder, GitHub yeniden derler.
    (Elle derlemek icin Windows'ta:  pip install pyinstaller  ve  python build.py)
 
 ILERIDE

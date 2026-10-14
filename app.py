@@ -5,15 +5,21 @@
     python app.py --ag       -> aynı ağdaki telefonlardan da erişilir
 """
 import argparse
+import json
 import os
+import shutil
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
+import time
+import urllib.request
 import webbrowser
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from flask import Flask, g, jsonify, request, send_from_directory
+from werkzeug.serving import make_server
 
 if getattr(sys, "frozen", False):  # PyInstaller exe
     TEMEL = os.path.dirname(sys.executable)
@@ -416,29 +422,195 @@ def ozet():
     return jsonify({"berberler": satir, "toplam": toplam})
 
 
+# --------------------------------------------------------------- program bilgisi
+def yerel_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))  # paket gönderilmez, sadece hangi arayüz seçilir
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+@app.get("/api/bilgi")
+def bilgi():
+    port = app.config.get("PORT", 5050)
+    return jsonify({
+        "surum": SURUM,
+        "ag": bool(app.config.get("AG")),
+        "port": port,
+        "telefon_adresi": f"http://{yerel_ip()}:{port}",
+    })
+
+
+# ------------------------------------------------------ online güncelleme (GitHub)
+GUNCELLEME_REPO = os.environ.get("BERBER_GUNCELLEME_REPO", "veloxtr/berber-randevu")
+EXE_ADI = "BerberRandevu.exe"
+_gunc = {"son_kontrol": 0.0, "yeni": None, "url": None, "hata": None}
+
+
+def surum_tuple(s):
+    try:
+        return tuple(int(x) for x in str(s).lstrip("vV").split("."))
+    except ValueError:
+        return (0,)
+
+
+def guncelleme_kontrol(zorla=False):
+    """GitHub'daki son sürümü sorar. Genel (public) depo gerekir; ağ yoksa sessizce geçer."""
+    if not zorla and time.time() - _gunc["son_kontrol"] < 6 * 3600:
+        return _gunc
+    _gunc["son_kontrol"] = time.time()
+    try:
+        rq = urllib.request.Request(
+            f"https://api.github.com/repos/{GUNCELLEME_REPO}/releases/latest",
+            headers={"User-Agent": "BerberRandevu", "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(rq, timeout=6) as r:
+            veri = json.load(r)
+        etiket = veri.get("tag_name", "")
+        asset = next((a for a in veri.get("assets", []) if a.get("name") == EXE_ADI), None)
+        if asset and surum_tuple(etiket) > surum_tuple(SURUM):
+            _gunc.update(yeni=etiket.lstrip("vV"), url=asset["browser_download_url"], hata=None)
+        else:
+            _gunc.update(yeni=None, url=None, hata=None)
+    except Exception as e:  # ağ yok, depo özel, limit vb.
+        _gunc.update(yeni=None, url=None, hata=str(e)[:120])
+    return _gunc
+
+
+@app.get("/api/guncelleme")
+def guncelleme_durum():
+    g = guncelleme_kontrol(zorla=request.args.get("zorla") == "1")
+    return jsonify({
+        "mevcut": SURUM, "yeni": g["yeni"], "hata": g["hata"],
+        "uygulanabilir": bool(getattr(sys, "frozen", False)),
+    })
+
+
+@app.post("/api/guncelleme/uygula")
+def guncelleme_uygula():
+    if not getattr(sys, "frozen", False):
+        return hata("Otomatik güncelleme sadece exe sürümünde çalışır.")
+    g = guncelleme_kontrol(zorla=True)
+    if not g["yeni"]:
+        return hata("Yeni sürüm bulunamadı.")
+    exe = sys.executable
+    yeni, eski = exe + ".yeni", exe + ".eski"
+    try:
+        rq = urllib.request.Request(g["url"], headers={"User-Agent": "BerberRandevu"})
+        with urllib.request.urlopen(rq, timeout=90) as r, open(yeni, "wb") as f:
+            shutil.copyfileobj(r, f)
+        with open(yeni, "rb") as f:
+            imza = f.read(2)
+        if imza != b"MZ" or os.path.getsize(yeni) < 1_000_000:
+            raise ValueError("İndirilen dosya geçerli bir exe değil.")
+        if os.path.exists(eski):
+            os.remove(eski)
+        os.replace(exe, eski)      # çalışan exe Windows'ta yeniden adlandırılabilir
+        os.replace(yeni, exe)
+    except Exception as e:
+        if not os.path.exists(exe) and os.path.exists(eski):
+            os.replace(eski, exe)  # yarım kaldıysa eskiye dön
+        try:
+            os.remove(yeni)
+        except OSError:
+            pass
+        return hata("Güncelleme indirilemedi: " + str(e)[:150], 502)
+    arg = " ".join(f'"{x}"' for x in sys.argv[1:])
+    komut = f'ping -n 5 127.0.0.1 >nul & start "" "{exe}" {arg}'
+    subprocess.Popen(["cmd", "/c", komut], creationflags=0x00000008 | 0x08000000, close_fds=True)
+    threading.Timer(1.5, lambda: os._exit(0)).start()   # port boşalsın, yeni sürüm açılsın
+    return jsonify({"tamam": True, "surum": g["yeni"]})
+
+
+@app.get("/api/ping")
+def ping():
+    app.config["SON_PING"] = time.time()
+    return jsonify({"tamam": True})
+
+
+def kalp_atisi_bekle():
+    """Edge penceresi hemen devrettiyse (kapanış izlenemiyorsa): sayfa belirli süre ping atmayınca çık."""
+    bas = time.time()
+    while True:
+        time.sleep(5)
+        son = app.config.get("SON_PING", 0)
+        if (son and time.time() - son > 180) or (not son and time.time() - bas > 120):
+            return
+
+
 # ------------------------------------------------------------------ çalıştır
+def pencere_ac(url, bekle=True):
+    """Adres çubuğu ve sekmesi olmayan, kendi penceresinde uygulama gibi açar (Edge/Chrome 'app' modu).
+    Pencere kapanana kadar bekler. Edge/Chrome yoksa False döner."""
+    adaylar = [
+        r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe",
+        r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe",
+        r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+        r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
+        r"%LocalAppData%\Google\Chrome\Application\chrome.exe",
+    ]
+    for a in adaylar:
+        yol = os.path.expandvars(a)
+        if os.path.exists(yol):
+            profil = os.path.join(TEMEL, "pencere_profil")  # ayrı profil: kendi süreci olur, kapanışı izlenebilir
+            pr = subprocess.Popen([
+                yol, f"--app={url}", f"--user-data-dir={profil}", "--window-size=1280,820",
+                "--no-first-run", "--no-default-browser-check", "--disable-features=Translate",
+            ])
+            if bekle:
+                t0 = time.time()
+                pr.wait()
+                if time.time() - t0 < 3:   # süreç hemen devredildi, kapanışı ping ile izle
+                    kalp_atisi_bekle()
+            return True
+    return False
+
+
 def main():
+    # Konsolsuz (windowed) exe'de stdout/stderr None olur; yazma hatası vermesin.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
+
     p = argparse.ArgumentParser()
     p.add_argument("--ag", action="store_true", help="Aynı ağdaki cihazlardan erişime aç (telefon)")
     p.add_argument("--port", type=int, default=5050)
-    p.add_argument("--tarayici-acma", action="store_true")
+    p.add_argument("--tarayici-acma", action="store_true", help="Pencere açma, sadece sunucu çalışsın (test)")
     a = p.parse_args()
-    # Program zaten açıksa ikinci kopya başlatma, sadece tarayıcıyı aç.
+    url = f"http://127.0.0.1:{a.port}"
+
+    # Program zaten açıksa ikinci sunucu başlatma, sadece yeni bir pencere aç.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.5)
         if s.connect_ex(("127.0.0.1", a.port)) == 0:
-            if not a.tarayici_acma:
-                webbrowser.open(f"http://127.0.0.1:{a.port}")
+            if not a.tarayici_acma and not pencere_ac(url, bekle=False):
+                webbrowser.open(url)
             return
+
     baslat_db()
-    host = "0.0.0.0" if a.ag else "127.0.0.1"
-    if not a.tarayici_acma:
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{a.port}")).start()
-    print(f"Berber Randevu v{SURUM} çalışıyor: http://127.0.0.1:{a.port}")
-    print("Programı kullanırken bu pencereyi KAPATMAYIN. Kapatmak için pencereyi kapatın.")
-    if a.ag:
-        print("Ağ erişimi AÇIK: telefondan http://<bu-bilgisayarın-IP'si>:%d adresini açın." % a.port)
-    app.run(host=host, port=a.port, debug=False)
+    app.config["AG"] = a.ag
+    app.config["PORT"] = a.port
+    try:  # önceki güncellemeden kalan eski exe'yi temizle
+        if getattr(sys, "frozen", False) and os.path.exists(sys.executable + ".eski"):
+            os.remove(sys.executable + ".eski")
+    except OSError:
+        pass
+    threading.Thread(target=guncelleme_kontrol, daemon=True).start()
+    srv = make_server("0.0.0.0" if a.ag else "127.0.0.1", a.port, app, threaded=True)
+    sunucu = threading.Thread(target=srv.serve_forever, daemon=True)
+    sunucu.start()
+    print(f"Berber Randevu v{SURUM}: {url}" + ("  (telefon erişimi AÇIK)" if a.ag else ""))
+
+    if a.tarayici_acma:
+        sunucu.join()          # sadece sunucu (test / sunucu modu)
+        return
+    if not pencere_ac(url):    # pencere kapanınca buradan devam eder ve program biter
+        webbrowser.open(url)   # Edge/Chrome bulunamadı: varsayılan tarayıcıda aç, çalışmaya devam et
+        sunucu.join()
+    srv.shutdown()
 
 
 if __name__ == "__main__":

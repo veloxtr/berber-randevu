@@ -100,6 +100,9 @@ tfoot td{font-weight:650}
 .durum-sec button[data-d=geldi].secili{background:var(--geldi);color:var(--geldi-k);border-color:var(--geldi-k)}
 .durum-sec button[data-d=gelmedi].secili{background:var(--gelmedi);color:var(--gelmedi-k);border-color:var(--gelmedi-k)}
 .durum-sec button[data-d=iptal].secili{background:var(--iptal);color:var(--iptal-k);border-color:var(--iptal-k)}
+.gunc{background:var(--vurgu);color:#1b1304;padding:9px 16px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;font-weight:550}
+.gunc[hidden]{display:none}
+.gunc button{background:#1b1304;color:#fff;border:0;border-radius:8px;padding:6px 14px;font:inherit}
 .bildirim{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ana);color:#fff;padding:9px 16px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
 @media (prefers-color-scheme:dark){.bildirim{color:#10151c}}
 .bildirim.goster{opacity:1}
@@ -122,6 +125,7 @@ tfoot td{font-weight:650}
   </nav>
 </header>
 
+<div id="gunc" class="gunc" hidden></div>
 <main>
   <!-- TAKVİM -->
   <section id="takvim" class="sekme aktif">
@@ -187,9 +191,11 @@ tfoot td{font-weight:650}
       </div>
       <div class="hata" id="aHata"></div>
       <button class="btn ana" id="aKaydet">Kaydet</button>
-      <p style="color:var(--soluk);font-size:13px;margin-top:16px">
-        Telefondan kullanmak için programı <b>baslat_telefon.bat</b> ile açın; telefon ve bilgisayar aynı Wi-Fi'de olmalı.
-      </p>
+      <p style="color:var(--soluk);font-size:13px;margin-top:16px" id="telBilgi"></p>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn" id="gKontrol" type="button">Güncellemeyi kontrol et</button>
+        <span id="gDurum" style="color:var(--soluk);font-size:13px"></span>
+      </div>
     </div>
   </section>
 </main>
@@ -303,7 +309,7 @@ function takvimCiz(){
 
   const saatler = el("div",{class:"saatler",style:"height:"+yuk+"px;position:sticky"});
   for(let t=ac; t<kap; t+=adim){
-    if(t%60===0 || adim>=60) saatler.append(el("div",{class:"saat-etiket",style:"top:"+((t-ac)*PX_DK)+"px",text:saatStr(t)}));
+    if(t%60===0 || adim>=60) saatler.append(el("div",{class:"saat-etiket",style:"top:"+((t-ac)*PX_DK)+"px"+(t===ac?";transform:translateY(3px)":""),text:saatStr(t)}));
   }
   iz.append(saatler);
 
@@ -502,7 +508,19 @@ $("#bEkle").onclick = async ()=>{
 };
 
 /* ---------- ayarlar ---------- */
-function ayarForm(){ $("#aAd").value=ayar.dukkan_adi; $("#aAc").value=ayar.acilis; $("#aKap").value=ayar.kapanis; $("#aAdim").value=ayar.adim_dk; }
+async function ayarForm(){
+  $("#aAd").value=ayar.dukkan_adi; $("#aAc").value=ayar.acilis; $("#aKap").value=ayar.kapanis; $("#aAdim").value=ayar.adim_dk;
+  try{
+    const b = await api("/bilgi"), k=$("#telBilgi"); k.innerHTML="";
+    k.append(el("div",{text:"Sürüm "+b.surum}));
+    if(b.ag){
+      k.append(el("div",{},"Telefon erişimi AÇIK. Aynı Wi-Fi'deki telefonda şu adresi açın: ",el("b",{text:b.telefon_adresi})));
+      k.append(el("div",{text:"Telefonun çalışması için bu programın penceresi açık kalmalı."}));
+    }else{
+      k.append(el("div",{text:"Telefon erişimi kapalı. Açmak için programı kısayolundaki hedefin sonuna  --ag  ekleyerek başlatın."}));
+    }
+  }catch{}
+}
 $("#aKaydet").onclick = async ()=>{
   try{
     ayar = await api("/ayarlar","PUT",{dukkan_adi:$("#aAd").value,acilis:$("#aAc").value,kapanis:$("#aKap").value,adim_dk:$("#aAdim").value});
@@ -510,7 +528,37 @@ $("#aKaydet").onclick = async ()=>{
   }catch(e){ $("#aHata").textContent=e.message; }
 };
 
-yukle().catch(e=>{ document.body.prepend(el("div",{class:"hata",style:"padding:16px",text:"Yüklenemedi: "+e.message})); });
+/* ---------- online güncelleme ---------- */
+let guncelleniyor = false;
+async function guncellemeKontrol(zorla=false){
+  try{
+    const g = await api("/guncelleme"+(zorla?"?zorla=1":"")), b=$("#gunc");
+    if(g.yeni){
+      b.hidden=false; b.innerHTML="";
+      b.append(el("span",{text:"Yeni sürüm var: v"+g.yeni+" (şu an v"+g.mevcut+")"}));
+      if(g.uygulanabilir) b.append(el("button",{type:"button",text:"Şimdi güncelle",onclick:guncelle}));
+    }else b.hidden=true;
+    return g;
+  }catch{ return null; }
+}
+async function guncelle(){
+  if(guncelleniyor) return; guncelleniyor=true;
+  const b=$("#gunc"); b.innerHTML=""; b.append(el("span",{text:"Güncelleniyor… program kendiliğinden yeniden açılacak, lütfen bekleyin."}));
+  try{
+    await api("/guncelleme/uygula","POST");
+    b.firstChild.textContent="Güncellendi. Program yeniden açılıyor, bu pencere kapanacak…";
+    setTimeout(()=>{ window.close(); },1200);
+  }catch(e){ guncelleniyor=false; b.firstChild.textContent="Güncelleme başarısız: "+e.message; }
+}
+$("#gKontrol").onclick = async ()=>{
+  const d=$("#gDurum"); d.textContent="Kontrol ediliyor…";
+  const g = await guncellemeKontrol(true);
+  d.textContent = !g ? "Kontrol edilemedi." : g.yeni ? "Yeni sürüm bulundu: v"+g.yeni : g.hata ? "Kontrol edilemedi (internet yok?)." : "Güncelsiniz (v"+g.mevcut+").";
+};
+setInterval(()=>{ fetch("/api/ping").catch(()=>{}); }, 20000);
+fetch("/api/ping").catch(()=>{});
+
+yukle().then(()=>guncellemeKontrol()).catch(e=>{ document.body.prepend(el("div",{class:"hata",style:"padding:16px",text:"Yüklenemedi: "+e.message})); });
 setInterval(()=>{ if($("#takvim").classList.contains("aktif") && !$("#perde").classList.contains("acik")) gunYukle().catch(()=>{}); }, 60000);
 </script>
 </body>
