@@ -12,9 +12,11 @@ KULLANIM
                         Windows guvenlik duvari sorarsa "Ozel ag"a izin verin.
 
 NOT: Telefon baglanabilsin diye bilgisayar acik ve program calisiyor olmali.
-Veriler berber.db dosyasinda tutulur.
+Veriler exe'nin yanindaki BerberRandevu_Veri klasorunde (berber.db) tutulur.
 
-YEDEK: berber.db dosyasini kopyalamak yeterlidir. Yeni bilgisayarda ayni dosyayi koyunca her sey gelir.
+YEDEK: Her gun ilk acilista otomatik yedek alinir, Ayarlar > Yedek'ten elle de alinir.
+Yedekler BerberRandevu_Veri\Yedekler klasorune gider; yeni yedek alinca en eskisi silinir (varsayilan 14 adet).
+Guncellemede eski exe de ayni klasore saklanir (son 3). Geri yukleme Ayarlar > Yedek'te.
 
 YETKILI GIRISI (PIN)
 - Ayarlar (disli simgesi) ve Hakedis (saat simgesi / sol menu) sadece PIN ile acilir.
@@ -25,6 +27,21 @@ YETKILI GIRISI (PIN)
   hakedis (ciro x oran) ve dukkan payi. Satira tiklayinca islemler acilir. CSV olarak indirilir.
 - PIN unutulursa: programi kapatin, program klasorune bos bir PIN_SIFIRLA.txt dosyasi koyup
   yeniden acin; PIN silinir, yenisini belirlersiniz. Randevu verileri etkilenmez.
+
+KASA (PARA CIKISI) - PIN gerekmez, personel girer
+- Sol menu > Kasa. Iki buyuk dugme: "Dukkan gideri" (cay, market, fatura...) ve "Personel avansi"
+  (berber gun icinde kasadan para aldi). Kim aldi, tutar, ne icin - dokunarak secilir.
+- Yanlis girisi 10 dk icinde herkes Sil ile duzeltir; eski kayit icin PIN gerekir.
+- Hakedis ekraninda avanslar otomatik dusulur (Odenecek = hakedis - avans), dukkan giderleri
+  "Dukkan net" hesabina girer.
+
+SESLE RANDEVU
+- Randevular ekraninda "Sesle randevu" > mikrofona dokunup konusun:
+  "Hasan ustanin musterisi gelecek cuma gunu saat bes bucukta" (istege bagli: "... Ahmet Yilmaz adina sac sakal").
+  Randevu formu hazir dolu acilir, kontrol edip Kaydet'e basilir. Yazarak da calisir.
+- Ses tanima icin internet ve mikrofon izni gerekir (Edge/Chrome'un sesi cozmesi internetten olur).
+
+RANDEVU LISTESI: "Cizelge" gorunumu (varsayilan) sutun sutun tablodur, "Takvim" gorunumu saat izgarasidir.
 
 TAKVIM
 - Sol menuden bir berbere tiklayinca sadece onun takvimi gorunur (tekrar tiklayinca hepsi).

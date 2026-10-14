@@ -10,6 +10,7 @@ PyInstaller.__main__.run([
     "--name", "BerberRandevu",
     "--add-data", "static" + os.pathsep + "static",
     "--add-data", "version.py" + os.pathsep + ".",
+    "--icon", "icon.ico",
     "--clean",
     "--noconfirm",
 ])

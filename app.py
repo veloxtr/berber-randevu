@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -35,8 +36,11 @@ else:
 sys.path.insert(0, TEMEL if not getattr(sys, "frozen", False) else sys._MEIPASS)
 from version import VERSION as SURUM  # noqa: E402
 
-DB_YOLU = os.environ.get("BERBER_DB", os.path.join(TEMEL, "berber.db"))
+# Tüm veriler exe'nin yanındaki tek bir klasörde durur (masaüstü dağınık kalmasın):
+#   BerberRandevu_Veri/berber.db, BerberRandevu_Veri/Yedekler/..., BerberRandevu_Veri/pencere_profil
+DB_YOLU = os.environ.get("BERBER_DB", os.path.join(TEMEL, "BerberRandevu_Veri", "berber.db"))
 DURUMLAR = ("bekliyor", "geldi", "gelmedi", "iptal")
+YEDEK_DESEN = re.compile(r"^berber_\d{4}-\d{2}-\d{2}_\d{6}\.db$")
 
 app = Flask(__name__, static_folder=STATIK, static_url_path="/static")
 
@@ -89,12 +93,44 @@ CREATE TABLE IF NOT EXISTS ayarlar (
     anahtar TEXT PRIMARY KEY,
     deger TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kasa_cikis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tarih TEXT NOT NULL,          -- YYYY-MM-DD
+    saat TEXT NOT NULL,           -- HH:MM
+    tur TEXT NOT NULL,            -- 'gider' (dükkan gideri) | 'avans' (personel avansı)
+    berber_id INTEGER REFERENCES berberler(id),   -- parayı kim aldı
+    kategori TEXT NOT NULL DEFAULT '',
+    aciklama TEXT NOT NULL DEFAULT '',
+    tutar REAL NOT NULL,
+    olusturma TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_kasa_tarih ON kasa_cikis(tarih);
 """
 
-VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukkan_adi": "Berber Randevu"}
+VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukkan_adi": "Berber Randevu",
+                   "yedek_adet": "14"}
+
+
+def veri_dizini():
+    return os.path.dirname(DB_YOLU)
+
+
+def yedek_dizini():
+    return os.path.join(veri_dizini(), "Yedekler")
+
+
+def veri_hazirla():
+    """Veri klasörünü açar; eski yerleşimi (db exe'nin yanında) yeni klasöre taşır."""
+    os.makedirs(veri_dizini(), exist_ok=True)
+    if "BERBER_DB" not in os.environ:
+        eski = os.path.join(TEMEL, "berber.db")
+        if os.path.exists(eski) and not os.path.exists(DB_YOLU):
+            shutil.move(eski, DB_YOLU)
+        shutil.rmtree(os.path.join(TEMEL, "pencere_profil"), ignore_errors=True)   # eski konum
 
 
 def baslat_db():
+    veri_hazirla()
     c = sqlite3.connect(DB_YOLU)
     c.executescript(SEMA)
     if "hakedis_oran" not in [r[1] for r in c.execute("PRAGMA table_info(berberler)")]:
@@ -110,6 +146,104 @@ def baslat_db():
         )
     c.commit()
     c.close()
+
+
+# ------------------------------------------------------------------- yedekleme
+EXE_YEDEK_ADET = 3     # güncellemede kenara alınan eski exe'lerden en fazla bu kadarı tutulur
+
+
+def yedek_adet_oku():
+    try:
+        c = sqlite3.connect(DB_YOLU)
+        r = c.execute("SELECT deger FROM ayarlar WHERE anahtar='yedek_adet'").fetchone()
+        c.close()
+        return max(3, min(60, int(r[0]))) if r else 14
+    except Exception:
+        return 14
+
+
+def yedek_dosyalari():
+    """Veritabanı yedeklerinin adları, en yeniden eskiye."""
+    d = yedek_dizini()
+    if not os.path.isdir(d):
+        return []
+    return sorted((f for f in os.listdir(d) if YEDEK_DESEN.match(f)), reverse=True)
+
+
+def exe_yedek_dosyalari():
+    d = yedek_dizini()
+    if not os.path.isdir(d):
+        return []
+    adlar = [f for f in os.listdir(d) if f.startswith("BerberRandevu_") and f.endswith(".exe")]
+    return sorted(adlar, key=lambda f: os.path.getmtime(os.path.join(d, f)), reverse=True)
+
+
+def yedek_temizle():
+    """Yeni yedekten sonra: ayarlardaki adedi aşan EN ESKİ yedekler silinir (exe yedekleri için son 3)."""
+    d = yedek_dizini()
+    for f in yedek_dosyalari()[yedek_adet_oku():]:
+        try:
+            os.remove(os.path.join(d, f))
+        except OSError:
+            pass
+    for f in exe_yedek_dosyalari()[EXE_YEDEK_ADET:]:
+        try:
+            os.remove(os.path.join(d, f))
+        except OSError:
+            pass
+
+
+def yedek_al():
+    """Çalışan veritabanının tutarlı bir kopyasını Yedekler klasörüne alır, sonra eskileri temizler."""
+    os.makedirs(yedek_dizini(), exist_ok=True)
+    ad = datetime.now().strftime("berber_%Y-%m-%d_%H%M%S.db")
+    kaynak = sqlite3.connect(DB_YOLU)
+    hedef = sqlite3.connect(os.path.join(yedek_dizini(), ad))
+    try:
+        kaynak.backup(hedef)
+    finally:
+        hedef.close()
+        kaynak.close()
+    yedek_temizle()
+    return ad
+
+
+def bugun_yedek_var():
+    onek = datetime.now().strftime("berber_%Y-%m-%d_")
+    return any(f.startswith(onek) for f in yedek_dosyalari())
+
+
+def otomatik_yedek_dongusu():
+    """Program açık kaldıkça günde en az bir yedek (açılışta + gün değişince)."""
+    while True:
+        try:
+            if not bugun_yedek_var():
+                yedek_al()
+        except Exception:
+            pass
+        time.sleep(1800)
+
+
+def yedek_geri_yukle(ad):
+    if not YEDEK_DESEN.match(ad) or not os.path.exists(os.path.join(yedek_dizini(), ad)):
+        raise ValueError("Yedek dosyası bulunamadı.")
+    gecici = os.path.join(veri_dizini(), "geri_yukle_gecici.db")
+    shutil.copy2(os.path.join(yedek_dizini(), ad), gecici)   # temizlik seçilen yedeği silmesin diye kopya
+    try:
+        yedek_al()                                           # geri yüklemeden önce mevcut hali de yedekle
+        kaynak = sqlite3.connect(gecici)
+        hedef = sqlite3.connect(DB_YOLU)
+        try:
+            kaynak.backup(hedef)
+        finally:
+            kaynak.close()
+            hedef.close()
+    finally:
+        try:
+            os.remove(gecici)
+        except OSError:
+            pass
+    baslat_db()
 
 
 # ------------------------------------------------------------------ yardımcı
@@ -344,6 +478,14 @@ def ayar_kaydet():
         if a not in (10, 15, 20, 30, 60):
             return hata("Adım 10, 15, 20, 30 veya 60 olabilir.")
         yeni["adim_dk"] = str(a)
+    if "yedek_adet" in v:
+        try:
+            n = int(v["yedek_adet"])
+        except (TypeError, ValueError):
+            return hata("Yedek adedi sayı olmalı.")
+        if not 3 <= n <= 60:
+            return hata("Yedek adedi 3 ile 60 arasında olmalı.")
+        yeni["yedek_adet"] = str(n)
     try:
         if saat_dk(yeni["acilis"]) >= saat_dk(yeni["kapanis"]):
             return hata("Açılış saati kapanıştan önce olmalı.")
@@ -577,11 +719,93 @@ def ozet():
     return jsonify({"toplam": toplam})   # berber bazlı kırılım hakediş ekranında (yetkili)
 
 
+# ---------------------------------------------------------------------- kasa
+KASA_TURLER = ("gider", "avans")
+
+
+def kasa_satir(r):
+    return dict(r)
+
+
+@app.get("/api/kasa")
+def kasa_liste():
+    """Gün içi kasa çıkışları (PIN gerekmez: personel girer). tarih verilmezse bugün."""
+    tarih = request.args.get("tarih") or datetime.now().strftime("%Y-%m-%d")
+    cur = db().execute(
+        """SELECT k.id, k.tarih, k.saat, k.tur, k.berber_id, b.ad AS berber, k.kategori, k.aciklama, k.tutar
+           FROM kasa_cikis k LEFT JOIN berberler b ON b.id=k.berber_id
+           WHERE k.tarih=? ORDER BY k.saat DESC, k.id DESC""",
+        (tarih,),
+    )
+    liste = satirlar(cur)
+    toplam = {
+        "gider": round(sum(x["tutar"] for x in liste if x["tur"] == "gider"), 2),
+        "avans": round(sum(x["tutar"] for x in liste if x["tur"] == "avans"), 2),
+    }
+    toplam["toplam"] = round(toplam["gider"] + toplam["avans"], 2)
+    return jsonify({"tarih": tarih, "liste": liste, "toplam": toplam})
+
+
+@app.post("/api/kasa")
+def kasa_ekle():
+    v = request.get_json(silent=True) or {}
+    tur = v.get("tur")
+    if tur not in KASA_TURLER:
+        return hata("Tür seçin: dükkan gideri veya personel avansı.")
+    try:
+        tutar = round(float(v.get("tutar")), 2)
+    except (TypeError, ValueError):
+        return hata("Tutarı yazın.")
+    if not (0 < tutar < 10_000_000):
+        return hata("Tutar sıfırdan büyük olmalı.")
+    berber_id = None
+    if v.get("berber_id") not in (None, ""):
+        try:
+            berber_id = int(v.get("berber_id"))
+        except (TypeError, ValueError):
+            return hata("Kişi geçersiz.")
+        if not db().execute("SELECT 1 FROM berberler WHERE id=?", (berber_id,)).fetchone():
+            return hata("Kişi bulunamadı.")
+    if tur == "avans" and berber_id is None:
+        return hata("Parayı kimin aldığını seçin.")
+    kategori = str(v.get("kategori") or "").strip()[:40]
+    aciklama = str(v.get("aciklama") or "").strip()[:200]
+    simdi = datetime.now()
+    tarih, saat = simdi.strftime("%Y-%m-%d"), simdi.strftime("%H:%M")
+    if (v.get("tarih") or v.get("saat")) and yetkili_mi():   # geçmişe kayıt sadece yetkili
+        tarih = v.get("tarih") or tarih
+        saat = v.get("saat") or saat
+    cur = db().execute(
+        "INSERT INTO kasa_cikis(tarih,saat,tur,berber_id,kategori,aciklama,tutar,olusturma) VALUES(?,?,?,?,?,?,?,?)",
+        (tarih, saat, tur, berber_id, kategori, aciklama, tutar, simdi.isoformat(timespec="seconds")),
+    )
+    db().commit()
+    return jsonify({"id": cur.lastrowid}), 201
+
+
+@app.delete("/api/kasa/<int:kid>")
+def kasa_sil(kid):
+    """Yanlış girişi düzeltmek için: bugün ve son 10 dk içinde girilen herkes silebilir; eskisi için PIN."""
+    r = db().execute("SELECT olusturma, tarih FROM kasa_cikis WHERE id=?", (kid,)).fetchone()
+    if not r:
+        return hata("Kayıt yok.", 404)
+    try:
+        yeni = (datetime.now() - datetime.fromisoformat(r["olusturma"])).total_seconds() < 600
+    except ValueError:
+        yeni = False
+    if not yeni and not yetkili_mi():
+        return jsonify({"hata": "Eski kaydı silmek için yetkili girişi gerekli.", "kod": "yetki"}), 401
+    db().execute("DELETE FROM kasa_cikis WHERE id=?", (kid,))
+    db().commit()
+    return jsonify({"ok": True})
+
+
 # ------------------------------------------------------------------- hakediş
 @app.get("/api/hakedis")
 @yetkili_gerekli
 def hakedis():
-    """Sadece 'geldi' işaretli randevular sayılır. Hakediş = ciro x berberin oranı."""
+    """Sadece 'geldi' işaretli randevular sayılır. Hakediş = ciro x berberin oranı.
+    Ödenecek = hakediş - dönem içindeki avanslar. Dükkan gideri ayrıca gösterilir."""
     bas = request.args.get("bas")
     bit = request.args.get("bit") or bas
     if not bas:
@@ -596,10 +820,20 @@ def hakedis():
         (bas, bit),
     )
     satir = satirlar(cur)
+    avans = {r["berber_id"]: r["t"] for r in db().execute(
+        "SELECT berber_id, SUM(tutar) AS t FROM kasa_cikis WHERE tur='avans' AND tarih BETWEEN ? AND ? GROUP BY berber_id",
+        (bas, bit))}
     for s in satir:
         s["hakedis"] = round(s["ciro"] * s["oran"] / 100, 2)
         s["dukkan"] = round(s["ciro"] - s["hakedis"], 2)
-    toplam = {k: round(sum(s[k] for s in satir), 2) for k in ("adet", "ciro", "hakedis", "dukkan")}
+        s["avans"] = round(avans.get(s["berber_id"], 0) or 0, 2)
+        s["odenecek"] = round(s["hakedis"] - s["avans"], 2)
+    toplam = {k: round(sum(s[k] for s in satir), 2) for k in ("adet", "ciro", "hakedis", "dukkan", "avans", "odenecek")}
+    gider = db().execute(
+        "SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE tur='gider' AND tarih BETWEEN ? AND ?", (bas, bit)
+    ).fetchone()[0]
+    toplam["gider"] = round(gider, 2)
+    toplam["dukkan_net"] = round(toplam["dukkan"] - toplam["gider"], 2)
     return jsonify({"berberler": satir, "toplam": toplam})
 
 
@@ -614,13 +848,18 @@ def hakedis_detay():
         return hata("berber_id gerekli.")
     if not bas:
         return hata("bas gerekli.")
-    cur = db().execute(
+    isler = satirlar(db().execute(
         """SELECT tarih, baslangic, musteri_ad, hizmetler, ucret FROM randevular
            WHERE berber_id=? AND durum='geldi' AND tarih BETWEEN ? AND ?
            ORDER BY tarih, baslangic""",
         (bid, bas, bit),
-    )
-    return jsonify(satirlar(cur))
+    ))
+    avanslar = satirlar(db().execute(
+        """SELECT tarih, saat, aciklama, tutar FROM kasa_cikis
+           WHERE berber_id=? AND tur='avans' AND tarih BETWEEN ? AND ? ORDER BY tarih, saat""",
+        (bid, bas, bit),
+    ))
+    return jsonify({"isler": isler, "avanslar": avanslar})
 
 
 # --------------------------------------------------------------- program bilgisi
@@ -698,7 +937,9 @@ def guncelleme_uygula():
     if not g["yeni"]:
         return hata("Yeni sürüm bulunamadı.")
     exe = sys.executable
-    yeni, eski = exe + ".yeni", exe + ".eski"
+    yeni = exe + ".yeni"
+    # Eski exe masaüstüne/yanına dağılmasın: Yedekler klasörüne alınır (son 3 tutulur).
+    eski = os.path.join(yedek_dizini(), "BerberRandevu_v%s_%s.exe" % (SURUM, datetime.now().strftime("%Y%m%d-%H%M%S")))
     try:
         rq = urllib.request.Request(g["url"], headers={"User-Agent": "BerberRandevu"})
         with urllib.request.urlopen(rq, timeout=90) as r, open(yeni, "wb") as f:
@@ -707,10 +948,11 @@ def guncelleme_uygula():
             imza = f.read(2)
         if imza != b"MZ" or os.path.getsize(yeni) < 1_000_000:
             raise ValueError("İndirilen dosya geçerli bir exe değil.")
-        if os.path.exists(eski):
-            os.remove(eski)
-        os.replace(exe, eski)      # çalışan exe Windows'ta yeniden adlandırılabilir
+        yedek_al()                                   # güncellemeden önce veritabanı yedeği
+        os.makedirs(yedek_dizini(), exist_ok=True)
+        os.replace(exe, eski)      # çalışan exe Windows'ta taşınabilir/yeniden adlandırılabilir
         os.replace(yeni, exe)
+        yedek_temizle()
     except Exception as e:
         if not os.path.exists(exe) and os.path.exists(eski):
             os.replace(eski, exe)  # yarım kaldıysa eskiye dön
@@ -729,6 +971,57 @@ def guncelleme_uygula():
 @app.get("/api/ping")
 def ping():
     app.config["SON_PING"] = time.time()
+    return jsonify({"tamam": True})
+
+
+# -------------------------------------------------------------------- yedek uçları
+@app.get("/api/yedek")
+@yetkili_gerekli
+def yedek_durum():
+    d = yedek_dizini()
+
+    def bilgi(f):
+        yol = os.path.join(d, f)
+        return {"ad": f, "boyut": os.path.getsize(yol),
+                "zaman": datetime.fromtimestamp(os.path.getmtime(yol)).isoformat(timespec="seconds")}
+
+    return jsonify({
+        "klasor": d, "adet": yedek_adet_oku(),
+        "liste": [bilgi(f) for f in yedek_dosyalari()],
+        "exe_liste": [bilgi(f) for f in exe_yedek_dosyalari()],
+    })
+
+
+@app.post("/api/yedek")
+@yetkili_gerekli
+def yedek_manuel():
+    try:
+        return jsonify({"tamam": True, "ad": yedek_al()})
+    except Exception as e:
+        return hata("Yedek alınamadı: " + str(e)[:150], 500)
+
+
+@app.post("/api/yedek/klasor-ac")
+@yetkili_gerekli
+def yedek_klasor_ac():
+    d = yedek_dizini()
+    os.makedirs(d, exist_ok=True)
+    if os.name != "nt":
+        return jsonify({"tamam": False, "klasor": d, "mesaj": "Klasörü sadece Windows'ta açabilirim."})
+    os.startfile(d)  # noqa: S606 (Windows Gezgini)
+    return jsonify({"tamam": True, "klasor": d})
+
+
+@app.post("/api/yedek/geri-yukle")
+@yetkili_gerekli
+def yedek_geri_yukle_ucu():
+    ad = str((request.get_json(force=True, silent=True) or {}).get("ad", ""))
+    try:
+        yedek_geri_yukle(ad)
+    except ValueError as e:
+        return hata(str(e), 404)
+    except Exception as e:
+        return hata("Geri yüklenemedi: " + str(e)[:150], 500)
     return jsonify({"tamam": True})
 
 
@@ -756,7 +1049,7 @@ def pencere_ac(url, bekle=True):
     for a in adaylar:
         yol = os.path.expandvars(a)
         if os.path.exists(yol):
-            profil = os.path.join(TEMEL, "pencere_profil")  # ayrı profil: kendi süreci olur, kapanışı izlenebilir
+            profil = os.path.join(veri_dizini(), "pencere_profil")  # ayrı profil: kendi süreci olur, kapanışı izlenebilir
             pr = subprocess.Popen([
                 yol, f"--app={url}", f"--user-data-dir={profil}", "--window-size=1280,820",
                 "--no-first-run", "--no-default-browser-check", "--disable-features=Translate",
@@ -806,11 +1099,15 @@ def main():
             os.remove(sifirla)
         except OSError:
             pass
-    try:  # önceki güncellemeden kalan eski exe'yi temizle
+    try:  # eski sürümün güncellemesinden yanda kalan .eski exe'yi Yedekler klasörüne taşı
         if getattr(sys, "frozen", False) and os.path.exists(sys.executable + ".eski"):
-            os.remove(sys.executable + ".eski")
+            os.makedirs(yedek_dizini(), exist_ok=True)
+            shutil.move(sys.executable + ".eski", os.path.join(
+                yedek_dizini(), "BerberRandevu_onceki_%s.exe" % datetime.now().strftime("%Y%m%d-%H%M%S")))
+            yedek_temizle()
     except OSError:
         pass
+    threading.Thread(target=otomatik_yedek_dongusu, daemon=True).start()   # açılışta + günde en az bir yedek
     threading.Thread(target=guncelleme_kontrol, daemon=True).start()
     srv = make_server("0.0.0.0" if a.ag else "127.0.0.1", a.port, app, threaded=True)
     sunucu = threading.Thread(target=srv.serve_forever, daemon=True)
