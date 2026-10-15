@@ -372,7 +372,7 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
         </div>
       </section>
 
-      <p class="alt-yazi" id="altYazi"></p>
+      <p class="alt-yazi" id="altYazi">© EYK · All Rights Reserved</p>
     </main>
   </div>
 </div>
@@ -562,7 +562,7 @@ async function yukle(){
   if(b) $("#surumPill").textContent = "v"+b.surum;
   $("#dukkanAdi").textContent = ayar.dukkan_adi || "Berber Randevu";
   document.title = ayar.dukkan_adi || "Berber Randevu";
-  $("#altYazi").textContent = "© "+new Date().getFullYear()+" · "+(ayar.dukkan_adi||"Berber Randevu");
+  $("#altYazi").textContent = "© "+new Date().getFullYear()+" EYK · All Rights Reserved";
   await gunYukle();
 }
 async function gunYukle(){
@@ -1115,7 +1115,7 @@ function ayarDukkan(k){
       try{
         ayar=await api("/ayarlar","PUT",{dukkan_adi:ad.value,acilis:ac.value,kapanis:kap.value,adim_dk:adim.value});
         hata.textContent=""; $("#dukkanAdi").textContent=ayar.dukkan_adi; document.title=ayar.dukkan_adi;
-        $("#altYazi").textContent="© "+new Date().getFullYear()+" · "+ayar.dukkan_adi; bildir("Ayarlar kaydedildi");
+        bildir("Ayarlar kaydedildi");
       }catch(e){ hata.textContent=e.message; }
     }}));
 }
