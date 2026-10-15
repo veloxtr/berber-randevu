@@ -977,9 +977,11 @@ def guncelleme_uygula():
         except OSError:
             pass
         return hata("Güncelleme indirilemedi: " + str(e)[:150], 502)
-    arg = " ".join(f'"{x}"' for x in sys.argv[1:])
-    komut = f'ping -n 5 127.0.0.1 >nul & start "" "{exe}" {arg}'
-    subprocess.Popen(["cmd", "/c", komut], creationflags=0x00000008 | 0x08000000, close_fds=True)
+    # Yeni exe'yi doğrudan (cmd/konsol penceresi olmadan) başlat; eski süreç kapanana kadar kendisi bekler.
+    env = dict(os.environ, BERBER_YENIDEN="1", PYINSTALLER_RESET_ENVIRONMENT="1")
+    env.pop("_MEIPASS2", None)
+    subprocess.Popen([exe, *sys.argv[1:]], env=env, cwd=TEMEL, close_fds=True,
+                     creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     threading.Timer(1.5, lambda: os._exit(0)).start()   # port boşalsın, yeni sürüm açılsın
     return jsonify({"tamam": True, "surum": g["yeni"]})
 
@@ -1092,6 +1094,15 @@ def main():
     p.add_argument("--tarayici-acma", action="store_true", help="Pencere açma, sadece sunucu çalışsın (test)")
     a = p.parse_args()
     url = f"http://127.0.0.1:{a.port}"
+
+    if os.environ.get("BERBER_YENIDEN"):      # güncellemeden sonra: eski süreç portu bırakana kadar bekle
+        for _ in range(60):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s0:
+                s0.settimeout(0.3)
+                if s0.connect_ex(("127.0.0.1", a.port)) != 0:
+                    break
+            time.sleep(0.5)
+        os.environ.pop("BERBER_YENIDEN", None)
 
     # Program zaten açıksa ikinci sunucu başlatma, sadece yeni bir pencere aç.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
