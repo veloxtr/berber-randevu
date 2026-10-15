@@ -1,2 +1,2 @@
 """Uygulama sürümü. Yeni sürüm için sadece burayı artırıp main'e gönder; GitHub exe'yi derleyip yayınlar."""
-VERSION = "1.4.4"
+VERSION = "1.5.0"

@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.request
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, g, jsonify, request, send_from_directory
 from werkzeug.serving import make_server
@@ -105,19 +105,23 @@ CREATE TABLE IF NOT EXISTS kasa_cikis (
     olusturma TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_kasa_tarih ON kasa_cikis(tarih);
+CREATE TABLE IF NOT EXISTS gun_sonu (
+    tarih TEXT PRIMARY KEY,       -- YYYY-MM-DD
+    sayilan REAL NOT NULL,        -- kasada sayılan nakit
+    beklenen REAL NOT NULL,       -- kayıtlara göre kasada olması gereken nakit
+    notu TEXT NOT NULL DEFAULT '',
+    olusturma TEXT NOT NULL
+);
 """
 
 VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukkan_adi": "Berber Randevu",
-                   "yedek_adet": "14", "cizelge_kolon": "", "hakedis_modu": "tutar"}
+                   "yedek_adet": "14", "cizelge_kolon": "", "kapat_sor": "1", "dukkan_logo": ""}
 CIZELGE_KOLONLAR = ("telefon", "hizmet", "sure", "durum", "not")
 
 
 def sayilir_sql(alias="r"):
-    """Ciro/hakediş hesabına hangi randevular girer?
-    'tutar' (varsayılan): iptal ve gelmedi dışındaki tüm yazılan tutarlar. 'geldi': sadece Geldi işaretliler."""
-    if ayarlar().get("hakedis_modu") == "geldi":
-        return f"{alias}.durum='geldi'"
-    return f"{alias}.durum NOT IN ('gelmedi','iptal')"
+    """Ciro/hakediş: ödemesi alınmış (Nakit/Havale) ve iptal/gelmedi olmayan randevular."""
+    return f"({alias}.odeme<>'' AND {alias}.durum NOT IN ('gelmedi','iptal'))"
 
 
 def veri_dizini():
@@ -144,6 +148,12 @@ def baslat_db():
     c.executescript(SEMA)
     if "hakedis_oran" not in [r[1] for r in c.execute("PRAGMA table_info(berberler)")]:
         c.execute("ALTER TABLE berberler ADD COLUMN hakedis_oran REAL NOT NULL DEFAULT 50")
+    if "odeme_donemi" not in [r[1] for r in c.execute("PRAGMA table_info(berberler)")]:
+        c.execute("ALTER TABLE berberler ADD COLUMN odeme_donemi TEXT NOT NULL DEFAULT 'aylik'")
+    if "odeme" not in [r[1] for r in c.execute("PRAGMA table_info(randevular)")]:
+        c.execute("ALTER TABLE randevular ADD COLUMN odeme TEXT NOT NULL DEFAULT ''")   # '' | 'nakit' | 'havale'
+        # eski kayıtlar: tutarı yazılmış ve iptal/gelmedi olmayanlar tahsil edilmiş sayılır (nakit)
+        c.execute("UPDATE randevular SET odeme='nakit' WHERE ucret>0 AND durum NOT IN ('gelmedi','iptal')")
     for k, v in VARSAYILAN_AYAR.items():
         c.execute("INSERT OR IGNORE INTO ayarlar(anahtar, deger) VALUES (?, ?)", (k, v))
     if c.execute("SELECT COUNT(*) FROM berberler").fetchone()[0] == 0:
@@ -380,6 +390,11 @@ def dogrula_randevu(v, haric_id=None):
         ucret = float(v.get("ucret") or 0)
     except (TypeError, ValueError):
         return None, "Ücret geçersiz."
+    odeme = (v.get("odeme") or "").strip().lower()
+    if odeme not in ("", "nakit", "havale"):
+        return None, "Ödeme yöntemi Nakit veya Havale olmalı."
+    if odeme and ucret <= 0:
+        return None, "Ödeme alındıysa tutarı yazın."
     durum = v.get("durum") or "bekliyor"
     if durum not in DURUMLAR:
         return None, "Durum geçersiz."
@@ -398,6 +413,7 @@ def dogrula_randevu(v, haric_id=None):
         "sure_dk": sure,
         "hizmetler": (v.get("hizmetler") or "").strip(),
         "ucret": ucret,
+        "odeme": odeme,
         "durum": durum,
         "notu": (v.get("notu") or "").strip(),
     }, None
@@ -498,10 +514,15 @@ def ayar_kaydet():
     if "cizelge_kolon" in v:
         liste = v["cizelge_kolon"] if isinstance(v["cizelge_kolon"], list) else str(v["cizelge_kolon"]).split(",")
         yeni["cizelge_kolon"] = ",".join(k for k in CIZELGE_KOLONLAR if k in [str(x).strip() for x in liste])
-    if "hakedis_modu" in v:
-        if v["hakedis_modu"] not in ("tutar", "geldi"):
-            return hata("Hesap modu geçersiz.")
-        yeni["hakedis_modu"] = v["hakedis_modu"]
+    if "kapat_sor" in v:
+        yeni["kapat_sor"] = "1" if str(v["kapat_sor"]) in ("1", "true", "True") else "0"
+    if "dukkan_logo" in v:
+        lg = str(v["dukkan_logo"] or "")
+        if lg and not re.match(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$", lg):
+            return hata("Logo png, jpg veya webp olmalı.")
+        if len(lg) > 400_000:
+            return hata("Logo çok büyük (en fazla ~300 KB).")
+        yeni["dukkan_logo"] = lg
     try:
         if saat_dk(yeni["acilis"]) >= saat_dk(yeni["kapanis"]):
             return hata("Açılış saati kapanıştan önce olmalı.")
@@ -529,7 +550,7 @@ def oran_oku(v, varsayilan=None):
 @app.get("/api/berberler")
 def berber_liste():
     # Hakediş oranı sadece yetkili girişinde görünür.
-    kolon = "id, ad, aktif, hakedis_oran" if yetkili_mi() else "id, ad, aktif"
+    kolon = "id, ad, aktif, odeme_donemi, hakedis_oran" if yetkili_mi() else "id, ad, aktif, odeme_donemi"
     return jsonify(satirlar(db().execute(f"SELECT {kolon} FROM berberler WHERE aktif=1 ORDER BY id")))
 
 
@@ -543,9 +564,10 @@ def berber_ekle():
     oran, e = oran_oku(v, 50)
     if e:
         return hata(e)
-    cur = db().execute("INSERT INTO berberler(ad, hakedis_oran) VALUES (?, ?)", (ad, oran))
+    donem = "gunluk" if v.get("odeme_donemi") == "gunluk" else "aylik"
+    cur = db().execute("INSERT INTO berberler(ad, hakedis_oran, odeme_donemi) VALUES (?, ?, ?)", (ad, oran, donem))
     db().commit()
-    return jsonify({"id": cur.lastrowid, "ad": ad, "aktif": 1, "hakedis_oran": oran}), 201
+    return jsonify({"id": cur.lastrowid, "ad": ad, "aktif": 1, "hakedis_oran": oran, "odeme_donemi": donem}), 201
 
 
 @app.put("/api/berberler/<int:bid>")
@@ -558,9 +580,10 @@ def berber_guncelle(bid):
     oran, e = oran_oku(v, 50)
     if e:
         return hata(e)
-    db().execute("UPDATE berberler SET ad=?, hakedis_oran=? WHERE id=?", (ad, oran, bid))
+    donem = "gunluk" if v.get("odeme_donemi") == "gunluk" else "aylik"
+    db().execute("UPDATE berberler SET ad=?, hakedis_oran=?, odeme_donemi=? WHERE id=?", (ad, oran, donem, bid))
     db().commit()
-    return jsonify({"id": bid, "ad": ad, "hakedis_oran": oran})
+    return jsonify({"id": bid, "ad": ad, "hakedis_oran": oran, "odeme_donemi": donem})
 
 
 @app.delete("/api/berberler/<int:bid>")
@@ -723,7 +746,7 @@ def ozet():
                   SUM(CASE WHEN r.durum='gelmedi' THEN 1 ELSE 0 END) AS gelmedi,
                   SUM(CASE WHEN r.durum='iptal' THEN 1 ELSE 0 END) AS iptal,
                   COALESCE(SUM(CASE WHEN {SAY} THEN r.ucret END), 0) AS kazanc,
-                  COALESCE(SUM(CASE WHEN r.durum='bekliyor' AND NOT ({SAY}) THEN r.ucret END), 0) AS beklenen
+                  COALESCE(SUM(CASE WHEN r.durum='bekliyor' AND r.odeme='' THEN r.ucret END), 0) AS beklenen
            FROM berberler b
            LEFT JOIN randevular r ON r.berber_id=b.id AND r.tarih BETWEEN ? AND ?
            WHERE b.aktif=1 OR r.id IS NOT NULL
@@ -750,15 +773,16 @@ def kasa_liste():
     cur = db().execute(
         """SELECT k.id, k.tarih, k.saat, k.tur, k.berber_id, b.ad AS berber, k.kategori, k.aciklama, k.tutar
            FROM kasa_cikis k LEFT JOIN berberler b ON b.id=k.berber_id
-           WHERE k.tarih=? ORDER BY k.saat DESC, k.id DESC""",
-        (tarih,),
+           WHERE k.tarih=? AND (k.tur<>'maas' OR ?) ORDER BY k.saat DESC, k.id DESC""",
+        (tarih, 1 if yetkili_mi() else 0),
     )
     liste = satirlar(cur)
     toplam = {
         "gider": round(sum(x["tutar"] for x in liste if x["tur"] == "gider"), 2),
         "avans": round(sum(x["tutar"] for x in liste if x["tur"] == "avans"), 2),
     }
-    toplam["toplam"] = round(toplam["gider"] + toplam["avans"], 2)
+    toplam["maas"] = round(sum(x["tutar"] for x in liste if x["tur"] == "maas"), 2)
+    toplam["toplam"] = round(toplam["gider"] + toplam["avans"] + toplam["maas"], 2)
     return jsonify({"tarih": tarih, "liste": liste, "toplam": toplam})
 
 
@@ -802,9 +826,11 @@ def kasa_ekle():
 @app.delete("/api/kasa/<int:kid>")
 def kasa_sil(kid):
     """Yanlış girişi düzeltmek için: bugün ve son 10 dk içinde girilen herkes silebilir; eskisi için PIN."""
-    r = db().execute("SELECT olusturma, tarih FROM kasa_cikis WHERE id=?", (kid,)).fetchone()
+    r = db().execute("SELECT olusturma, tarih, tur FROM kasa_cikis WHERE id=?", (kid,)).fetchone()
     if not r:
         return hata("Kayıt yok.", 404)
+    if r["tur"] == "maas" and not yetkili_mi():
+        return jsonify({"hata": "Usta ödemesini silmek için yetkili girişi gerekli.", "kod": "yetki"}), 401
     try:
         yeni = (datetime.now() - datetime.fromisoformat(r["olusturma"])).total_seconds() < 600
     except ValueError:
@@ -839,12 +865,18 @@ def hakedis():
     avans = {r["berber_id"]: r["t"] for r in db().execute(
         "SELECT berber_id, SUM(tutar) AS t FROM kasa_cikis WHERE tur='avans' AND tarih BETWEEN ? AND ? GROUP BY berber_id",
         (bas, bit))}
+    odenen = {r["berber_id"]: r["t"] for r in db().execute(
+        "SELECT berber_id, SUM(tutar) AS t FROM kasa_cikis WHERE tur='maas' AND tarih BETWEEN ? AND ? GROUP BY berber_id",
+        (bas, bit))}
+    donemler = {r["id"]: r["odeme_donemi"] for r in db().execute("SELECT id, odeme_donemi FROM berberler")}
     for s in satir:
         s["hakedis"] = round(s["ciro"] * s["oran"] / 100, 2)
         s["dukkan"] = round(s["ciro"] - s["hakedis"], 2)
         s["avans"] = round(avans.get(s["berber_id"], 0) or 0, 2)
-        s["odenecek"] = round(s["hakedis"] - s["avans"], 2)
-    toplam = {k: round(sum(s[k] for s in satir), 2) for k in ("adet", "ciro", "hakedis", "dukkan", "avans", "odenecek")}
+        s["odenen"] = round(odenen.get(s["berber_id"], 0) or 0, 2)
+        s["odenecek"] = round(s["hakedis"] - s["avans"] - s["odenen"], 2)
+        s["donem"] = donemler.get(s["berber_id"], "aylik")
+    toplam = {k: round(sum(s[k] for s in satir), 2) for k in ("adet", "ciro", "hakedis", "dukkan", "avans", "odenen", "odenecek")}
     gider = db().execute(
         "SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE tur='gider' AND tarih BETWEEN ? AND ?", (bas, bit)
     ).fetchone()[0]
@@ -875,7 +907,219 @@ def hakedis_detay():
            WHERE berber_id=? AND tur='avans' AND tarih BETWEEN ? AND ? ORDER BY tarih, saat""",
         (bid, bas, bit),
     ))
-    return jsonify({"isler": isler, "avanslar": avanslar})
+    odemeler = satirlar(db().execute(
+        """SELECT tarih, saat, kategori, tutar FROM kasa_cikis
+           WHERE berber_id=? AND tur='maas' AND tarih BETWEEN ? AND ? ORDER BY tarih, saat""",
+        (bid, bas, bit),
+    ))
+    return jsonify({"isler": isler, "avanslar": avanslar, "odemeler": odemeler})
+
+
+@app.post("/api/maas")
+@yetkili_gerekli
+def maas_ode():
+    """Ustaya hakediş ödemesi (günlük ya da aylık): kasadan çıkış olarak kaydedilir, hakedişten düşer."""
+    v = request.get_json(force=True, silent=True) or {}
+    try:
+        bid = int(v.get("berber_id"))
+        tutar = round(float(v.get("tutar")), 2)
+    except (TypeError, ValueError):
+        return hata("Usta ve tutar gerekli.")
+    if tutar <= 0:
+        return hata("Tutar sıfırdan büyük olmalı.")
+    yontem = "Havale" if str(v.get("yontem")).lower() == "havale" else "Nakit"
+    if not db().execute("SELECT 1 FROM berberler WHERE id=?", (bid,)).fetchone():
+        return hata("Usta bulunamadı.")
+    simdi = datetime.now()
+    tarih = v.get("tarih") or simdi.strftime("%Y-%m-%d")
+    try:
+        datetime.strptime(tarih, "%Y-%m-%d")
+    except ValueError:
+        return hata("Tarih geçersiz.")
+    cur = db().execute(
+        "INSERT INTO kasa_cikis(tarih,saat,tur,berber_id,kategori,aciklama,tutar,olusturma) VALUES(?,?,?,?,?,?,?,?)",
+        (tarih, simdi.strftime("%H:%M"), "maas", bid, yontem, str(v.get("aciklama") or "")[:200], tutar,
+         simdi.isoformat(timespec="seconds")),
+    )
+    db().commit()
+    return jsonify({"id": cur.lastrowid}), 201
+
+
+def gun_ozeti(tarih):
+    d = db()
+    odenen = d.execute(
+        """SELECT COALESCE(SUM(CASE WHEN odeme='nakit' THEN ucret END),0) AS nakit,
+                  COALESCE(SUM(CASE WHEN odeme='havale' THEN ucret END),0) AS havale,
+                  COUNT(*) AS kisi FROM randevular r WHERE tarih=? AND """ + sayilir_sql(), (tarih,)).fetchone()
+    bekl = d.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(ucret),0) AS t FROM randevular
+           WHERE tarih=? AND odeme='' AND durum NOT IN ('gelmedi','iptal')""", (tarih,)).fetchone()
+    gider = d.execute("SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE tarih=? AND tur='gider'", (tarih,)).fetchone()[0]
+    avans = d.execute("SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE tarih=? AND tur='avans'", (tarih,)).fetchone()[0]
+    maas_n = d.execute("SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE tarih=? AND tur='maas' AND kategori<>'Havale'", (tarih,)).fetchone()[0]
+    out = {"tarih": tarih, "nakit": round(odenen["nakit"], 2), "havale": round(odenen["havale"], 2), "kisi": odenen["kisi"],
+           "ciro": round(odenen["nakit"] + odenen["havale"], 2),
+           "odemesiz_adet": bekl["n"], "odemesiz_tutar": round(bekl["t"], 2),
+           "gider": round(gider, 2), "avans": round(avans, 2), "maas_nakit": round(maas_n, 2)}
+    out["beklenen_nakit"] = round(out["nakit"] - out["gider"] - out["avans"] - out["maas_nakit"], 2)
+    r = d.execute("SELECT sayilan, notu FROM gun_sonu WHERE tarih=?", (tarih,)).fetchone()
+    out["sayim"] = {"sayilan": r["sayilan"], "fark": round(r["sayilan"] - out["beklenen_nakit"], 2), "notu": r["notu"]} if r else None
+    return out
+
+
+@app.get("/api/gunsonu")
+def gunsonu_getir():
+    tarih = request.args.get("tarih") or datetime.now().strftime("%Y-%m-%d")
+    return jsonify(gun_ozeti(tarih))
+
+
+@app.post("/api/gunsonu")
+def gunsonu_kaydet():
+    v = request.get_json(force=True, silent=True) or {}
+    tarih = v.get("tarih") or datetime.now().strftime("%Y-%m-%d")
+    try:
+        datetime.strptime(tarih, "%Y-%m-%d")
+        sayilan = round(float(v.get("sayilan")), 2)
+    except (TypeError, ValueError):
+        return hata("Sayılan nakit tutarını yazın.")
+    if sayilan < 0:
+        return hata("Tutar eksi olamaz.")
+    g = gun_ozeti(tarih)
+    db().execute("INSERT OR REPLACE INTO gun_sonu(tarih,sayilan,beklenen,notu,olusturma) VALUES (?,?,?,?,?)",
+                 (tarih, sayilan, g["beklenen_nakit"], str(v.get("notu") or "")[:200], datetime.now().isoformat(timespec="seconds")))
+    db().commit()
+    return jsonify(gun_ozeti(tarih))
+
+
+@app.get("/api/gunsonu/ustalar")
+@yetkili_gerekli
+def gunsonu_ustalar():
+    """Gün sonu usta hesabı: o günün (günlük çalışanlar için) ve ay başından o güne kadarki (aylıklar için) durum."""
+    tarih = request.args.get("tarih") or datetime.now().strftime("%Y-%m-%d")
+    ay_bas = tarih[:8] + "01"
+
+    def hesap(bas, bit):
+        sat = satirlar(db().execute(
+            """SELECT b.id AS berber_id, b.ad AS berber, b.hakedis_oran AS oran, b.odeme_donemi AS donem,
+                      COUNT(r.id) AS adet, COALESCE(SUM(r.ucret),0) AS ciro
+               FROM berberler b LEFT JOIN randevular r ON r.berber_id=b.id AND """ + sayilir_sql() + """ AND r.tarih BETWEEN ? AND ?
+               WHERE b.aktif=1 GROUP BY b.id ORDER BY b.id""", (bas, bit)))
+        for x in sat:
+            x["hakedis"] = round(x["ciro"] * x["oran"] / 100, 2)
+            x["avans"] = round(db().execute("SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE berber_id=? AND tur='avans' AND tarih BETWEEN ? AND ?", (x["berber_id"], bas, bit)).fetchone()[0], 2)
+            x["odenen"] = round(db().execute("SELECT COALESCE(SUM(tutar),0) FROM kasa_cikis WHERE berber_id=? AND tur='maas' AND tarih BETWEEN ? AND ?", (x["berber_id"], bas, bit)).fetchone()[0], 2)
+            x["odenecek"] = round(x["hakedis"] - x["avans"] - x["odenen"], 2)
+        return {x["berber_id"]: x for x in sat}
+
+    gun, ay = hesap(tarih, tarih), hesap(ay_bas, tarih)
+    return jsonify([{"berber_id": k, "berber": gun[k]["berber"], "donem": gun[k]["donem"], "gun": gun[k], "ay": ay[k]} for k in gun])
+
+
+@app.get("/api/rapor")
+@yetkili_gerekli
+def rapor():
+    """Yönetim raporları: seçilen tarih aralığı için tüm özetler tek cevapta."""
+    bas = request.args.get("bas")
+    bit = request.args.get("bit") or bas
+    try:
+        d0, d1 = datetime.strptime(bas or "", "%Y-%m-%d"), datetime.strptime(bit or "", "%Y-%m-%d")
+    except ValueError:
+        return hata("Tarih aralığı gerekli.")
+    if d1 < d0 or (d1 - d0).days > 400:
+        return hata("Tarih aralığı geçersiz (en fazla 400 gün).")
+    d = db()
+    rows = satirlar(d.execute(
+        """SELECT r.*, b.ad AS berber, b.hakedis_oran AS oran FROM randevular r JOIN berberler b ON b.id=r.berber_id
+           WHERE r.tarih BETWEEN ? AND ?""", (bas, bit)))
+    odendi = lambda r: r["odeme"] != "" and r["durum"] not in ("gelmedi", "iptal")
+    paid = [r for r in rows if odendi(r)]
+    kasa = satirlar(d.execute(
+        """SELECT k.*, b.ad AS berber FROM kasa_cikis k LEFT JOIN berberler b ON b.id=k.berber_id
+           WHERE k.tarih BETWEEN ? AND ?""", (bas, bit)))
+    ciro = sum(r["ucret"] for r in paid)
+    ozet = {
+        "ciro": round(ciro, 2),
+        "nakit": round(sum(r["ucret"] for r in paid if r["odeme"] == "nakit"), 2),
+        "havale": round(sum(r["ucret"] for r in paid if r["odeme"] == "havale"), 2),
+        "kisi": len(paid),
+        "ortalama": round(ciro / len(paid), 2) if paid else 0,
+        "odemesiz": len([r for r in rows if r["odeme"] == "" and r["durum"] not in ("gelmedi", "iptal")]),
+        "gelmedi": len([r for r in rows if r["durum"] == "gelmedi"]),
+        "iptal": len([r for r in rows if r["durum"] == "iptal"]),
+        "gider": round(sum(k["tutar"] for k in kasa if k["tur"] == "gider"), 2),
+        "avans": round(sum(k["tutar"] for k in kasa if k["tur"] == "avans"), 2),
+        "maas": round(sum(k["tutar"] for k in kasa if k["tur"] == "maas"), 2),
+    }
+    # günlük seri
+    gunluk, t = [], d0
+    gun_map = {}
+    for r in paid:
+        g = gun_map.setdefault(r["tarih"], {"ciro": 0, "nakit": 0, "havale": 0, "kisi": 0})
+        g["ciro"] += r["ucret"]; g[r["odeme"]] += r["ucret"]; g["kisi"] += 1
+    while t <= d1:
+        k = t.strftime("%Y-%m-%d")
+        g = gun_map.get(k, {"ciro": 0, "nakit": 0, "havale": 0, "kisi": 0})
+        gunluk.append({"tarih": k, **{a: round(b, 2) for a, b in g.items()}})
+        t += timedelta(days=1)
+    # berberler
+    bsay = {}
+    for r in rows:
+        b = bsay.setdefault(r["berber_id"], {"berber": r["berber"], "oran": r["oran"], "kisi": 0, "ciro": 0.0, "gelmedi": 0, "iptal": 0})
+        if odendi(r):
+            b["kisi"] += 1; b["ciro"] += r["ucret"]
+        if r["durum"] == "gelmedi": b["gelmedi"] += 1
+        if r["durum"] == "iptal": b["iptal"] += 1
+    berberler = []
+    for bid, b in bsay.items():
+        av = sum(k["tutar"] for k in kasa if k["berber_id"] == bid and k["tur"] == "avans")
+        od = sum(k["tutar"] for k in kasa if k["berber_id"] == bid and k["tur"] == "maas")
+        hk = b["ciro"] * b["oran"] / 100
+        berberler.append({**b, "ciro": round(b["ciro"], 2), "ortalama": round(b["ciro"] / b["kisi"], 2) if b["kisi"] else 0,
+                          "hakedis": round(hk, 2), "avans": round(av, 2), "odenen": round(od, 2), "odenecek": round(hk - av - od, 2)})
+    berberler.sort(key=lambda x: -x["ciro"])
+    ozet["hakedis"] = round(sum(b["hakedis"] for b in berberler), 2)
+    ozet["dukkan_net"] = round(ciro - ozet["hakedis"] - ozet["gider"], 2)
+    # hizmetler
+    hiz = {}
+    for r in paid:
+        adlar = [x for x in r["hizmetler"].split(";") if x] or ["(Hizmet yazılmadı)"]
+        for ad in adlar:
+            h = hiz.setdefault(ad, {"hizmet": ad, "adet": 0, "ciro": 0.0})
+            h["adet"] += 1; h["ciro"] += r["ucret"] / len(adlar)
+    hizmetler = sorted(({**h, "ciro": round(h["ciro"], 2)} for h in hiz.values()), key=lambda x: -x["adet"])
+    # saat ve hafta günü
+    saat = [{"saat": h, "kisi": 0, "ciro": 0.0} for h in range(24)]
+    gunler = [{"gun": g, "kisi": 0, "ciro": 0.0} for g in ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")]
+    for r in rows:
+        if r["durum"] in ("iptal",):
+            continue
+        saat[int(r["baslangic"][:2])]["kisi"] += 1
+        gunler[datetime.strptime(r["tarih"], "%Y-%m-%d").weekday()]["kisi"] += 1
+    for r in paid:
+        saat[int(r["baslangic"][:2])]["ciro"] += r["ucret"]
+        gunler[datetime.strptime(r["tarih"], "%Y-%m-%d").weekday()]["ciro"] += r["ucret"]
+    saat = [{**x, "ciro": round(x["ciro"], 2)} for x in saat if x["kisi"] or x["ciro"]]
+    gunler = [{**x, "ciro": round(x["ciro"], 2)} for x in gunler]
+    # kasa
+    kat = {}
+    for k in kasa:
+        if k["tur"] == "gider":
+            kat[k["kategori"] or k["aciklama"] or "Diğer"] = kat.get(k["kategori"] or k["aciklama"] or "Diğer", 0) + k["tutar"]
+    giderler = sorted(({"kategori": a, "tutar": round(b, 2)} for a, b in kat.items()), key=lambda x: -x["tutar"])
+    avanslar = sorted(({"tarih": k["tarih"], "saat": k["saat"], "berber": k["berber"], "aciklama": k["aciklama"], "tutar": k["tutar"]} for k in kasa if k["tur"] == "avans"), key=lambda x: (x["tarih"], x["saat"]))
+    # müşteriler
+    mus = {}
+    for r in rows:
+        m = mus.setdefault(r["musteri_ad"].strip().lower(), {"musteri": r["musteri_ad"].strip(), "telefon": r["telefon"], "ziyaret": 0, "ciro": 0.0, "gelmedi": 0, "son": ""})
+        if odendi(r):
+            m["ziyaret"] += 1; m["ciro"] += r["ucret"]; m["son"] = max(m["son"], r["tarih"])
+        if r["durum"] == "gelmedi": m["gelmedi"] += 1
+    liste = [{**m, "ciro": round(m["ciro"], 2)} for m in mus.values()]
+    musteriler = sorted([m for m in liste if m["ziyaret"]], key=lambda x: (-x["ziyaret"], -x["ciro"]))[:15]
+    gelmeyenler = sorted([m for m in liste if m["gelmedi"]], key=lambda x: -x["gelmedi"])[:10]
+    return jsonify({"bas": bas, "bit": bit, "ozet": ozet, "gunluk": gunluk, "berberler": berberler, "hizmetler": hizmetler,
+                    "saat": saat, "gunler": gunler, "giderler": giderler, "avanslar": avanslar,
+                    "musteriler": musteriler, "gelmeyenler": gelmeyenler})
 
 
 # --------------------------------------------------------------- program bilgisi
@@ -977,13 +1221,25 @@ def guncelleme_uygula():
         except OSError:
             pass
         return hata("Güncelleme indirilemedi: " + str(e)[:150], 502)
-    # Yeni exe'yi doğrudan (cmd/konsol penceresi olmadan) başlat; eski süreç kapanana kadar kendisi bekler.
-    env = dict(os.environ, BERBER_YENIDEN="1", PYINSTALLER_RESET_ENVIRONMENT="1")
-    env.pop("_MEIPASS2", None)
-    subprocess.Popen([exe, *sys.argv[1:]], env=env, cwd=TEMEL, close_fds=True,
-                     creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    # Yeni exe'yi Windows kabuğuyla (çift tıklamayla aynı yol) başlat: cmd/konsol penceresi açılmaz.
+    os.environ["BERBER_YENIDEN"] = "1"
+    os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    os.environ.pop("_MEIPASS2", None)
+    try:
+        os.startfile(exe, arguments=subprocess.list2cmdline(sys.argv[1:]), cwd=TEMEL)   # type: ignore[attr-defined]
+    except Exception:
+        subprocess.Popen([exe, *sys.argv[1:]], cwd=TEMEL, close_fds=True, creationflags=0x00000008 | 0x00000200)
     threading.Timer(1.5, lambda: os._exit(0)).start()   # port boşalsın, yeni sürüm açılsın
     return jsonify({"tamam": True, "surum": g["yeni"]})
+
+
+@app.post("/api/kapat")
+def kapat():
+    """Programı kapatır (sadece bu bilgisayardan; telefon/ağ isteği kapatamaz)."""
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return hata("Programı sadece bu bilgisayardan kapatabilirsiniz.", 403)
+    threading.Timer(0.5, lambda: os._exit(0)).start()
+    return jsonify({"tamam": True})
 
 
 @app.get("/api/ping")

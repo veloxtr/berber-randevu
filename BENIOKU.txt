@@ -41,12 +41,25 @@ SESLE RANDEVU
   Randevu formu hazir dolu acilir, kontrol edip Kaydet'e basilir. Yazarak da calisir.
 - Ses tanima icin internet ve mikrofon izni gerekir (Edge/Chrome'un sesi cozmesi internetten olur).
 
-CIZELGE (varsayilan): her berber bir sutun; altinda Saat, Musteri, Tutar (elle yazilir). En alttaki bos
-satira yazip Enter'a basin; hucreye tiklayip duzeltin. En altta berber basina Toplam gorunur; PIN
-girince Usta hakedisi, avans, odenecek ve dukkan payi da gorunur.
-Telefon / Hizmet / Sure / Durum / Not sutunlari Ayarlar > Gorunum'den istege bagli acilir.
-Ayni yerden "tum yazilan tutarlar sayilsin" veya "sadece Geldi isaretliler" secilir.
+CIZELGE (varsayilan): her berber bir sutun; altinda Saat, Musteri, Tutar. Bos satira saat + musteri adini yazip
+Enter'a basin (randevu olusur). Kayitli satirlar kilitlidir: satira tiklayinca ayrinti penceresi acilir.
+Traştan sonra satirdaki "₺ Al" ile tutar yazilir ve Nakit / Havale secilir (zorunlu). Ciro sadece odemesi alinanlardan hesaplanir.
+Her berber sutununun altinda "+ Satir / - Satir" vardir (en az 10 satir kalir). En altta toplam, nakit/havale ayrimi;
+PIN girince hakedis, avans, kalan ve dukkan payi gorunur.
+Telefon / Hizmet / Sure / Durum / Not sutunlari Sistem Yonetimi > Gorunum ayarlari'ndan istege bagli acilir.
 "Takvim" gorunumu saat izgarasidir.
+
+SISTEM YONETIMI (sag ust, PIN'li): Ayarlar, Gorunum (tema, sutunlar, kapatirken sor), Yonetim raporlari, Hakedis, Kilitle, Programi kapat.
+- Ayarlar > Berberler: her usta icin hakedis orani ve odeme duzeni (Gunluk / Aylik).
+- Ayarlar > Dukkan: dukkan adi, calisma saatleri ve LOGO yukleme.
+- Yonetim raporlari: Genel (ciro, nakit/havale, dukkan net), Berberler, Hizmetler, Gun ve saat, Kasa giderleri, Musteriler; yazdirilabilir.
+
+GUN SONU (sol menu): nakit/havale tahsilat, gider, avans, kasada olmasi gereken nakit; sayilan nakit yazilinca fark
+(eksik/fazla) gosterilir. PIN ile usta hesaplari: gunluk ustalar icin o gunun, aylik ustalar icin ay basindan bugune hesap;
+"Ode" ile hakedis odemesi kasadan cikis olarak yazilir ve hakedisten dusulur.
+
+GUNCELLEME: acilista yeni surum varsa "Guncellensin mi?" sorulur. Hayir denirse sag ustte
+"Guncel surum degilsiniz, guncellemek icin tiklayin" yazisi kalir.
 
 TAKVIM
 - Sol menuden bir berbere tiklayinca sadece onun takvimi gorunur (tekrar tiklayinca hepsi).
