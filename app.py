@@ -108,7 +108,16 @@ CREATE INDEX IF NOT EXISTS ix_kasa_tarih ON kasa_cikis(tarih);
 """
 
 VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukkan_adi": "Berber Randevu",
-                   "yedek_adet": "14"}
+                   "yedek_adet": "14", "cizelge_kolon": "", "hakedis_modu": "tutar"}
+CIZELGE_KOLONLAR = ("telefon", "hizmet", "sure", "durum", "not")
+
+
+def sayilir_sql(alias="r"):
+    """Ciro/hakediş hesabına hangi randevular girer?
+    'tutar' (varsayılan): iptal ve gelmedi dışındaki tüm yazılan tutarlar. 'geldi': sadece Geldi işaretliler."""
+    if ayarlar().get("hakedis_modu") == "geldi":
+        return f"{alias}.durum='geldi'"
+    return f"{alias}.durum NOT IN ('gelmedi','iptal')"
 
 
 def veri_dizini():
@@ -486,6 +495,13 @@ def ayar_kaydet():
         if not 3 <= n <= 60:
             return hata("Yedek adedi 3 ile 60 arasında olmalı.")
         yeni["yedek_adet"] = str(n)
+    if "cizelge_kolon" in v:
+        liste = v["cizelge_kolon"] if isinstance(v["cizelge_kolon"], list) else str(v["cizelge_kolon"]).split(",")
+        yeni["cizelge_kolon"] = ",".join(k for k in CIZELGE_KOLONLAR if k in [str(x).strip() for x in liste])
+    if "hakedis_modu" in v:
+        if v["hakedis_modu"] not in ("tutar", "geldi"):
+            return hata("Hesap modu geçersiz.")
+        yeni["hakedis_modu"] = v["hakedis_modu"]
     try:
         if saat_dk(yeni["acilis"]) >= saat_dk(yeni["kapanis"]):
             return hata("Açılış saati kapanıştan önce olmalı.")
@@ -702,16 +718,16 @@ def ozet():
         return hata("bas gerekli.")
     cur = db().execute(
         """SELECT b.id AS berber_id, b.ad AS berber,
-                  SUM(CASE WHEN r.durum='geldi' THEN 1 ELSE 0 END) AS geldi,
+                  SUM(CASE WHEN {SAY} THEN 1 ELSE 0 END) AS geldi,
                   SUM(CASE WHEN r.durum='bekliyor' THEN 1 ELSE 0 END) AS bekliyor,
                   SUM(CASE WHEN r.durum='gelmedi' THEN 1 ELSE 0 END) AS gelmedi,
                   SUM(CASE WHEN r.durum='iptal' THEN 1 ELSE 0 END) AS iptal,
-                  COALESCE(SUM(CASE WHEN r.durum='geldi' THEN r.ucret END), 0) AS kazanc,
-                  COALESCE(SUM(CASE WHEN r.durum='bekliyor' THEN r.ucret END), 0) AS beklenen
+                  COALESCE(SUM(CASE WHEN {SAY} THEN r.ucret END), 0) AS kazanc,
+                  COALESCE(SUM(CASE WHEN r.durum='bekliyor' AND NOT ({SAY}) THEN r.ucret END), 0) AS beklenen
            FROM berberler b
            LEFT JOIN randevular r ON r.berber_id=b.id AND r.tarih BETWEEN ? AND ?
            WHERE b.aktif=1 OR r.id IS NOT NULL
-           GROUP BY b.id ORDER BY b.id""",
+           GROUP BY b.id ORDER BY b.id""".replace("{SAY}", sayilir_sql()),
         (bas, bit),
     )
     satir = satirlar(cur)
@@ -804,7 +820,7 @@ def kasa_sil(kid):
 @app.get("/api/hakedis")
 @yetkili_gerekli
 def hakedis():
-    """Sadece 'geldi' işaretli randevular sayılır. Hakediş = ciro x berberin oranı.
+    """Ayarlardaki hesap moduna göre sayılan randevular (varsayılan: iptal/gelmedi hariç hepsi). Hakediş = ciro x berberin oranı.
     Ödenecek = hakediş - dönem içindeki avanslar. Dükkan gideri ayrıca gösterilir."""
     bas = request.args.get("bas")
     bit = request.args.get("bit") or bas
@@ -814,9 +830,9 @@ def hakedis():
         """SELECT b.id AS berber_id, b.ad AS berber, b.hakedis_oran AS oran,
                   COUNT(r.id) AS adet, COALESCE(SUM(r.ucret), 0) AS ciro
            FROM berberler b
-           LEFT JOIN randevular r ON r.berber_id=b.id AND r.durum='geldi' AND r.tarih BETWEEN ? AND ?
+           LEFT JOIN randevular r ON r.berber_id=b.id AND {SAY} AND r.tarih BETWEEN ? AND ?
            WHERE b.aktif=1 OR r.id IS NOT NULL
-           GROUP BY b.id ORDER BY b.id""",
+           GROUP BY b.id ORDER BY b.id""".replace("{SAY}", sayilir_sql()),
         (bas, bit),
     )
     satir = satirlar(cur)
@@ -850,8 +866,8 @@ def hakedis_detay():
         return hata("bas gerekli.")
     isler = satirlar(db().execute(
         """SELECT tarih, baslangic, musteri_ad, hizmetler, ucret FROM randevular
-           WHERE berber_id=? AND durum='geldi' AND tarih BETWEEN ? AND ?
-           ORDER BY tarih, baslangic""",
+           WHERE berber_id=? AND {SAY} AND tarih BETWEEN ? AND ?
+           ORDER BY tarih, baslangic""".replace("{SAY}", sayilir_sql("randevular")),
         (bid, bas, bit),
     ))
     avanslar = satirlar(db().execute(

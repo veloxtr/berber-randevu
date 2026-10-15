@@ -121,6 +121,40 @@ table.cizelge td.saat{font-weight:750;white-space:nowrap;font-variant-numeric:ta
 .mini.r{color:#b45309;border-color:#f59e0b}
 .mini.r:hover{background:#fde7d3}
 
+/* çizelge: berber sütunları */
+table.defter{min-width:0;width:100%;border-collapse:separate;border-spacing:0}
+table.defter th.berber-ust{font-size:15px;color:var(--yazi);text-align:center;border-top:4px solid var(--c);padding:10px 8px;border-left:2px solid #c9cde4}
+table.defter th.alt{font-size:12px;top:var(--h1,42px)}
+table.defter td{padding:0;height:38px}
+table.defter td.grup{border-left:2px solid #c9cde4}
+table.defter input,table.defter select{border:0;background:transparent;border-radius:0;padding:8px 9px;width:100%;height:100%;min-width:0}
+table.defter input:focus,table.defter select:focus{background:#fff;outline:2px solid var(--ana);outline-offset:-2px}
+table.defter td.c-saat{width:112px}
+table.defter td.c-musteri{min-width:150px}
+table.defter td.c-tutar{min-width:112px}
+table.defter td.c-tutar input{text-align:right;font-weight:700}
+table.defter td.c-islem{width:44px;text-align:center}
+table.defter tbody tr{cursor:default}
+table.defter tr.yeni-satir td{background:#fcfcff}
+table.defter tr.yeni-satir input::placeholder{color:#b4b8cc}
+table.defter td.bos-h{background:#fafafc}
+table.defter tbody tr:hover td{background:inherit}
+table.defter tbody tr:nth-child(even) td{background:#fafbff}
+table.defter tr.iptal input{text-decoration:line-through;opacity:.5}
+table.defter tr.gelmedi input{color:#b45309}
+.nokta-b.k{vertical-align:middle}
+.mini.ac{padding:2px 8px;font-weight:700;color:var(--soluk)}
+table.defter tfoot td{padding:8px 10px;background:#f4f5fb;border-top:2px solid #d9dcec;font-variant-numeric:tabular-nums}
+table.defter tfoot tr.t-toplam td{font-size:15px;font-weight:800;border-top:2px solid #b9bdd6}
+table.defter tfoot tr.t-hak td{background:var(--yesil-acik);color:#166534;font-weight:800}
+table.defter tfoot tr.t-av td{background:#fff7ed;color:#b45309;font-weight:700}
+table.defter tfoot td.sag{text-align:right;white-space:nowrap}
+.hak-ac{margin-top:10px}
+.kolon-sec{display:grid;gap:8px;max-width:520px;margin:6px 0 14px}
+.kolon-sec label{display:flex;align-items:center;gap:10px;margin:0;color:var(--yazi);font-size:15px;border:1px solid var(--cizgi);border-radius:12px;padding:10px 14px;cursor:pointer}
+.kolon-sec input{width:auto}
+.kolon-sec small{color:var(--soluk);display:block}
+
 /* kasa */
 .kasa-dugmeler{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
 .kasa-d{border:0;border-radius:20px;padding:22px 14px;color:#fff;font-size:20px;font-weight:800;display:flex;flex-direction:column;align-items:center;gap:4px}
@@ -263,7 +297,8 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
             <span class="gor-sec" id="gorSec"><button type="button" data-g="liste">Çizelge</button><button type="button" data-g="takvim">Takvim</button></span>
             <button class="btn mik" id="sesAc" type="button">🎤 Sesle randevu</button>
           </div>
-          <div class="cizelge-sar" id="listeSar"><table class="cizelge" id="liste"></table></div>
+          <div class="cizelge-sar" id="listeSar"><table class="cizelge defter" id="liste"></table></div>
+          <div class="hak-ac" id="hakAc"><button class="btn kucuk" type="button" onclick="hakGoster()">🔒 Usta hakedişini göster (PIN)</button></div>
           <div class="takvim" id="takvimSar"><div class="izgara" id="izgara"></div></div>
         </div>
         <button class="buyuk" id="yeniRandevu">＋ Yeni randevu ekle</button>
@@ -303,7 +338,7 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
           </div>
           <table id="hTablo"></table>
           <div class="ozet-kutular" id="hOzet" style="margin-top:14px"></div>
-          <p class="not">Sadece <b>Geldi</b> işaretlenen randevular hesaplanır. Hakediş = ciro × berberin oranı. Ödenecek = hakediş − o dönemde kasadan aldığı avanslar. Dükkan net = dükkan payı − dükkan giderleri. Oranı değiştirirseniz geçmiş dönemler de yeni orana göre hesaplanır. Satıra tıklayınca o berberin işlemleri ve avansları açılır.</p>
+          <p class="not">Varsayılan olarak iptal ve gelmedi dışında yazılan tüm tutarlar hesaplanır (Ayarlar > Görünüm'den "sadece Geldi" seçilebilir). Hakediş = ciro × berberin oranı. Ödenecek = hakediş − o dönemde kasadan aldığı avanslar. Dükkan net = dükkan payı − dükkan giderleri. Oranı değiştirirseniz geçmiş dönemler de yeni orana göre hesaplanır. Satıra tıklayınca o berberin işlemleri ve avansları açılır.</p>
         </div>
       </section>
 
@@ -314,6 +349,7 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
             <button class="btn sec" data-a="berberler">Berberler</button>
             <button class="btn" data-a="hizmetler">Hizmetler</button>
             <button class="btn" data-a="dukkan">Dükkan</button>
+            <button class="btn" data-a="gorunum">Görünüm</button>
             <button class="btn" data-a="yedek">Yedek</button>
             <button class="btn" data-a="guvenlik">Güvenlik</button>
             <button class="btn" data-a="hakkinda">Hakkında</button>
@@ -519,12 +555,13 @@ async function yukle(){
 }
 async function gunYukle(){
   randevular = await api("/randevular?tarih="+gun);
+  try{ gunAvans={}; (await api("/kasa?tarih="+gun)).liste.filter(x=>x.tur==="avans").forEach(x=>gunAvans[x.berber_id]=(gunAvans[x.berber_id]||0)+x.tutar); }catch{}
   yanCiz(); takvimCiz(); ustBilgiYukle();
 }
 async function ustBilgiYukle(){
   try{
     const o = (await api("/ozet?bas="+bugunStr())).toplam;
-    $("#ustBilgi").textContent = "Bugün "+(o.geldi+o.bekliyor+o.gelmedi)+" randevu · "+TL(o.kazanc)+" kazanç · "+TL(o.beklenen)+" beklenen";
+    $("#ustBilgi").textContent = "Bugün "+(o.geldi+o.bekliyor+o.gelmedi)+" kişi · "+TL(o.kazanc)+(ayar.hakedis_modu==="geldi"?" kazanç":" toplam")+(o.beklenen?" · "+TL(o.beklenen)+" beklenen":"");
   }catch{}
 }
 
@@ -570,40 +607,147 @@ let gorunum = "liste";
 try{ gorunum = localStorage.getItem("gorunum")==="takvim" ? "takvim" : "liste"; }catch{}
 document.querySelectorAll("#gorSec button").forEach(b=>b.onclick=()=>{ gorunum=b.dataset.g; try{ localStorage.setItem("gorunum",gorunum); }catch{} takvimCiz(); });
 const DURUM_AD = {bekliyor:"Bekliyor",geldi:"Geldi",gelmedi:"Gelmedi",iptal:"İptal"};
-function listeCiz(){
-  const t=$("#liste"); t.innerHTML="";
-  const kol=["Saat","Müşteri","Telefon","Hizmet","Berber","Tutar","Durum","İşlem"];
-  t.append(el("thead",{},el("tr",{},...kol.map(k=>el("th",{class:k==="Tutar"?"sag":"",text:k})))));
-  const tb=el("tbody");
-  const liste=randevular.filter(r=>!filtre||r.berber_id===filtre).sort((a,b)=>a.baslangic.localeCompare(b.baslangic)||a.berber_id-b.berber_id);
-  if(!liste.length) tb.append(el("tr",{},el("td",{colspan:8,class:"bos",text:"Bu gün için randevu yok. “Yeni randevu ekle” veya “Sesle randevu” ile ekleyin."})));
-  liste.forEach(r=>{
-    const b=berberler.find(x=>x.id===r.berber_id);
-    const islem=el("td",{});
-    if(r.durum==="bekliyor"||r.durum==="gelmedi") islem.append(el("button",{class:"mini g",type:"button",text:"✓ Geldi",onclick:ev=>{ev.stopPropagation();durumDegis(r,"geldi");}}));
-    if(r.durum==="bekliyor") islem.append(el("button",{class:"mini r",type:"button",text:"Gelmedi",onclick:ev=>{ev.stopPropagation();durumDegis(r,"gelmedi");}}));
-    const tr=el("tr",{class:r.durum,title:r.notu||""},
-      el("td",{class:"saat",text:r.baslangic+" – "+saatStr(dk(r.baslangic)+r.sure_dk)}),
-      el("td",{},el("b",{text:r.musteri_ad})),
-      el("td",{text:r.telefon||"—"}),
-      el("td",{text:r.hizmetler?r.hizmetler.replace(/;/g," + "):"—"}),
-      el("td",{},el("span",{class:"nokta-b",style:"background:"+renk(r.berber_id)}),b?b.ad:"?"),
-      el("td",{class:"sag",style:"font-weight:700",text:r.ucret?TL(r.ucret):"—"}),
-      el("td",{},el("span",{class:"rozet "+r.durum,text:DURUM_AD[r.durum]})),
-      islem);
-    tr.onclick=()=>randevuAc(r);
-    tb.append(tr);
-  });
-  t.append(tb);
+const KOLON_AD = {telefon:"Telefon",hizmet:"Hizmet",sure:"Süre (dk)",durum:"Durum",not:"Not"};
+let odak=null, gunAvans={}, ayakEl=null;
+function sayilir(r){ return ayar.hakedis_modu==="geldi" ? r.durum==="geldi" : (r.durum!=="gelmedi"&&r.durum!=="iptal"); }
+function kolonlar(){ return (ayar.cizelge_kolon||"").split(",").filter(k=>KOLON_AD[k]); }
+function oranVar(b){ return !!token && b.hakedis_oran!==undefined && b.hakedis_oran!==null; }
+async function satirKaydet(r,degisen,anahtar){
+  const v={berber_id:r.berber_id,tarih:r.tarih,baslangic:r.baslangic,musteri_ad:r.musteri_ad,telefon:r.telefon,hizmetler:r.hizmetler,sure_dk:r.sure_dk,ucret:r.ucret,durum:r.durum,notu:r.notu,...degisen};
+  try{ await api("/randevular/"+r.id,"PUT",v); Object.assign(r,degisen); ayakCiz(); ustBilgiYukle(); }
+  catch(e){ bildir(e.message); await gunYukle(); }
 }
-async function durumDegis(r,d){
-  try{ await api("/randevular/"+r.id+"/durum","PATCH",{durum:d}); bildir(d==="geldi"?"Geldi işaretlendi":"Gelmedi işaretlendi"); await gunYukle(); }
-  catch(e){ bildir(e.message); }
+async function satirSil(r){
+  if(!confirm(r.musteri_ad+" satırı silinsin mi?")) return;
+  try{ await api("/randevular/"+r.id,"DELETE"); await gunYukle(); }catch(e){ bildir(e.message); }
+}
+let yeniKilit=false;
+async function yeniKaydet(b,h){
+  if(yeniKilit) return;
+  const musteri=h.musteri.value.trim(), tutar=+h.tutar.value||0;
+  if(!musteri && !tutar) return;
+  let saat=h.saat.value;
+  if(!saat){ const n=new Date(); const t=gun===bugunStr()?Math.min(Math.max(n.getHours()*60+n.getMinutes(),dk(ayar.acilis)),dk(ayar.kapanis)-1):dk(ayar.acilis); saat=saatStr(t); }
+  const kisi=(opt,k)=>opt[k]?opt[k].value.trim():"";
+  yeniKilit=true;
+  try{
+    await api("/randevular","POST",{berber_id:b.id,tarih:gun,baslangic:saat,musteri_ad:musteri||"Müşteri",telefon:kisi(h,"telefon"),hizmetler:"",sure_dk:+ayar.adim_dk,ucret:tutar,durum:"bekliyor",notu:kisi(h,"not")});
+    odak=b.id; await gunYukle();
+  }catch(e){ bildir(e.message); }
+  finally{ yeniKilit=false; }
+}
+function ayakCiz(){
+  if(!ayakEl) return;
+  const gor=listeBerberleri(), opt=kolonlar(), dolgu=opt.length+1;
+  ayakEl.innerHTML="";
+  const satirYap=(sinif,etiketFn,degerFn,goster)=>{
+    if(!gor.some(goster)) return;
+    const tr=el("tr",{class:sinif});
+    gor.forEach(b=>{
+      if(!goster(b)){ tr.append(el("td",{colspan:3+dolgu,class:"grup"})); return; }
+      tr.append(el("td",{colspan:2,class:"grup",text:etiketFn(b)}),el("td",{class:"sag",text:degerFn(b)}),el("td",{colspan:dolgu}));
+    });
+    ayakEl.append(tr);
+  };
+  const lis=b=>randevular.filter(r=>r.berber_id===b.id&&sayilir(r));
+  const top=b=>lis(b).reduce((t,r)=>t+r.ucret,0);
+  const av=b=>gunAvans[b.id]||0;
+  satirYap("t-toplam",b=>"Toplam ("+lis(b).length+" kişi)",b=>TL(top(b)),()=>true);
+  satirYap("t-hak",b=>"Usta hakedişi %"+b.hakedis_oran,b=>TL(top(b)*b.hakedis_oran/100),oranVar);
+  satirYap("t-av",b=>"Avans (kasadan aldı)",b=>"− "+TL(av(b)),b=>oranVar(b)&&av(b)>0);
+  satirYap("t-hak",b=>"Ödenecek (hakediş − avans)",b=>TL(top(b)*b.hakedis_oran/100-av(b)),b=>oranVar(b)&&av(b)>0);
+  satirYap("t-dukkan",b=>"Dükkan payı",b=>TL(top(b)-top(b)*b.hakedis_oran/100),oranVar);
+}
+function listeBerberleri(){ return filtre ? berberler.filter(b=>b.id===filtre) : berberler; }
+function listeCiz(){
+  const t=$("#liste"); t.innerHTML=""; t.className="cizelge defter";
+  const gor=listeBerberleri(), opt=kolonlar();
+  const kolSayi=3+opt.length+1;
+  const h1=el("tr",{}), h2=el("tr",{});
+  gor.forEach(b=>{
+    h1.append(el("th",{class:"berber-ust",colspan:kolSayi,style:"--c:"+renk(b.id)},el("span",{class:"nokta-b k",style:"background:"+renk(b.id)}),b.ad));
+    [["Saat","grup"],["Müşteri",""],["Tutar (₺)","sag"],...opt.map(k=>[KOLON_AD[k],""]),["",""]].forEach(([k,c],i)=>h2.append(el("th",{class:"alt "+c+(i===0?" gr":""),text:k,style:i===0?"border-left:2px solid #c9cde4":""})));
+  });
+  h2.querySelectorAll("th").forEach(th=>th.classList.add("alt"));
+  t.append(el("thead",{},h1,h2));
+  t.style.minWidth=(gor.length*(366+opt.length*120))+"px";
+  requestAnimationFrame(()=>t.style.setProperty("--h1",h1.offsetHeight+"px"));
+  const tb=el("tbody");
+  const per=gor.map(b=>randevular.filter(r=>r.berber_id===b.id).sort((x,y)=>x.baslangic.localeCompare(y.baslangic)));
+  const satirSay=Math.max(...per.map(x=>x.length),0)+1;
+  const yeniHucre={};
+  for(let j=0;j<satirSay;j++){
+    const tr=el("tr",{});
+    gor.forEach((b,bi)=>{
+      const liste=per[bi], r=liste[j];
+      const hucre=(sinif,...c)=>el("td",{class:sinif},...c);
+      if(r){
+        const gir=(tip,deger,anahtar,eklenti={})=>{
+          const i=el("input",{type:tip,value:deger,...eklenti});
+          i.addEventListener("change",()=>{
+            let v=i.value;
+            if(anahtar==="ucret") v=+v||0; else if(anahtar==="sure_dk") v=Math.max(5,+v||(+ayar.adim_dk));
+            else if(anahtar==="musteri_ad"&&!String(v).trim()){ i.value=r.musteri_ad; return; }
+            else if(anahtar==="baslangic"&&!v){ i.value=r.baslangic; return; }
+            satirKaydet(r,{[anahtar]:typeof v==="string"&&anahtar!=="baslangic"?v.trim():v});
+          });
+          return i;
+        };
+        const hs=[hucre("c-saat grup",gir("time",r.baslangic,"baslangic")),hucre("c-musteri",gir("text",r.musteri_ad,"musteri_ad",{autocomplete:"off"})),hucre("c-tutar",gir("number",r.ucret||"","ucret",{min:0,step:1,inputmode:"decimal",placeholder:"0"}))];
+        opt.forEach(k=>{
+          if(k==="telefon") hs.push(hucre("",gir("tel",r.telefon,"telefon")));
+          else if(k==="not") hs.push(hucre("",gir("text",r.notu,"notu")));
+          else if(k==="sure") hs.push(hucre("",gir("number",r.sure_dk,"sure_dk",{min:5,step:5})));
+          else if(k==="hizmet") hs.push(hucre("",el("input",{value:r.hizmetler?r.hizmetler.replace(/;/g," + "):"",readonly:"",placeholder:"—",style:"cursor:pointer",onclick:()=>randevuAc(r)})));
+          else if(k==="durum"){
+            const sel=el("select",{},...Object.entries(DURUM_AD).map(([d,ad])=>el("option",{value:d,text:ad}))); sel.value=r.durum;
+            sel.onchange=async()=>{ try{ await api("/randevular/"+r.id+"/durum","PATCH",{durum:sel.value}); r.durum=sel.value; tr.className=r.durum; ayakCiz(); ustBilgiYukle(); }catch(e){ bildir(e.message); await gunYukle(); } };
+            hs.push(hucre("",sel));
+          }
+        });
+        hs.push(hucre("c-islem",el("button",{class:"mini ac",type:"button",title:"Ayrıntı / sil",text:"⋯",onclick:()=>randevuAc(r)})));
+        tr.className=r.durum;
+        hs.forEach(x=>tr.append(x));
+      }else if(j===liste.length){
+        tr.classList.add("yeni-satir");
+        const h={};
+        const mk=(tip,ph,eklenti={})=>{ const i=el("input",{type:tip,placeholder:ph,"data-yeni":b.id,autocomplete:"off",...eklenti}); return i; };
+        h.saat=mk("time",""); h.musteri=mk("text","+ Müşteri adı"); h.tutar=mk("number","Tutar",{min:0,step:1,inputmode:"decimal"});
+        h.musteri.classList.add("yeni-musteri");
+        const hs=[hucre("c-saat grup",h.saat),hucre("c-musteri",h.musteri),hucre("c-tutar",h.tutar)];
+        opt.forEach(k=>{
+          if(k==="telefon"){ h.telefon=mk("tel","Telefon"); hs.push(hucre("",h.telefon)); }
+          else if(k==="not"){ h.not=mk("text","Not"); hs.push(hucre("",h.not)); }
+          else hs.push(hucre("bos-h"));
+        });
+        hs.push(hucre("c-islem",el("button",{class:"mini g",type:"button",title:"Ekle",text:"+",onclick:()=>yeniKaydet(b,h)})));
+        hs.forEach(x=>tr.append(x));
+        Object.values(h).forEach(i=>{
+          i.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); yeniKaydet(b,h); } });
+          i.addEventListener("focusout",e=>{ const n=e.relatedTarget; if(n&&n.getAttribute&&n.getAttribute("data-yeni")==String(b.id)) return; if(n&&n.classList&&n.classList.contains("g")&&n.closest("tr")===tr) return; yeniKaydet(b,h); });
+        });
+        yeniHucre[b.id]=h;
+      }else{
+        for(let c=0;c<kolSayi;c++) tr.append(el("td",{class:"bos-h"+(c===0?" grup":"")}));
+      }
+    });
+    tb.append(tr);
+  }
+  t.append(tb);
+  ayakEl=el("tfoot"); t.append(ayakEl); ayakCiz();
+  if(odak!==null&&yeniHucre[odak]){ const f=yeniHucre[odak].musteri; odak=null; setTimeout(()=>f.focus(),30); } else odak=null;
+  const kilit=$("#hakAc");
+  if(kilit) kilit.style.display=(token&&gor.some(oranVar))?"none":"";
+}
+async function hakGoster(){
+  if(!token && !(await girisIste())) return;
+  berberler=await api("/berberler"); yanCiz(); takvimCiz();
 }
 function takvimCiz(){
   document.querySelectorAll("#gorSec button").forEach(b=>b.classList.toggle("sec",b.dataset.g===gorunum));
   $("#listeSar").style.display = gorunum==="liste"?"":"none";
   $("#takvimSar").style.display = gorunum==="takvim"?"":"none";
+  $("#hakAc").style.display = gorunum==="liste"?"":"none";
   listeCiz();
   const d = strTarih(gun);
   $("#tarihBaslik").textContent = d.getDate()+" "+AY[d.getMonth()]+" "+d.getFullYear()+", "+GUN[d.getDay()];
@@ -642,12 +786,12 @@ function takvimCiz(){
     iz.append(s);
   });
   const aktif=randevular.filter(r=>r.durum!=="iptal");
-  const kazanc=randevular.filter(r=>r.durum==="geldi").reduce((t,r)=>t+r.ucret,0);
-  const bekl=randevular.filter(r=>r.durum==="bekliyor").reduce((t,r)=>t+r.ucret,0);
+  const kazanc=randevular.filter(sayilir).reduce((t,r)=>t+r.ucret,0);
+  const bekl=ayar.hakedis_modu==="geldi"?randevular.filter(r=>r.durum==="bekliyor").reduce((t,r)=>t+r.ucret,0):0;
   const o=$("#gunOzet"); o.innerHTML="";
   o.append(el("span",{class:"n"}),
-    el("span",{text:aktif.length+" randevu · "+randevular.filter(r=>r.durum==="geldi").length+" geldi · "+TL(kazanc)+" kazanç · "+TL(bekl)+" beklenen"}),
-    el("span",{class:"sag",text:gorunum==="takvim"?"Boş saate tıklayarak da randevu ekleyebilirsiniz":"Satıra tıklayınca düzenlenir"}));
+    el("span",{text:aktif.length+" kişi · "+TL(kazanc)+(ayar.hakedis_modu==="geldi"?" kazanç":" toplam")+(bekl?" · "+TL(bekl)+" beklenen":"")}),
+    el("span",{class:"sag",text:gorunum==="takvim"?"Boş saate tıklayarak da randevu ekleyebilirsiniz":"Yazıp Enter'a basın; hücreye tıklayıp düzeltebilirsiniz"}));
 }
 $("#onceki").onclick=()=>{ gun=gunKay(gun,-1); gunYukle(); };
 $("#sonraki").onclick=()=>{ gun=gunKay(gun,1); gunYukle(); };
@@ -887,6 +1031,7 @@ async function ayarCiz(){
   if(ayarSekme==="berberler") ayarBerberler(k);
   else if(ayarSekme==="hizmetler") ayarHizmetler(k);
   else if(ayarSekme==="dukkan") ayarDukkan(k);
+  else if(ayarSekme==="gorunum") ayarGorunum(k);
   else if(ayarSekme==="yedek") await ayarYedek(k);
   else if(ayarSekme==="guvenlik") ayarGuvenlik(k);
   else await ayarHakkinda(k);
@@ -935,6 +1080,28 @@ function ayarDukkan(k){
         $("#altYazi").textContent="© "+new Date().getFullYear()+" · "+ayar.dukkan_adi; bildir("Ayarlar kaydedildi");
       }catch(e){ hata.textContent=e.message; }
     }}));
+}
+function ayarGorunum(k){
+  const acik=new Set(kolonlar());
+  const bilgi={telefon:"Müşteri telefonu",hizmet:"Yapılan hizmet (saç, sakal…)",sure:"Süre (dakika)",durum:"Durum: Bekliyor / Geldi / Gelmedi / İptal",not:"Not"};
+  k.append(el("p",{class:"not",style:"margin-top:0",text:"Çizelgede her berberin altında şunlar hep görünür: Saat, Müşteri, Tutar. Başka sütun isterseniz buradan açın; istemediğiniz zaman kapatın."}));
+  const kutu=el("div",{class:"kolon-sec"});
+  const girdiler={};
+  Object.keys(KOLON_AD).forEach(kol=>{
+    const i=el("input",{type:"checkbox"}); i.checked=acik.has(kol); girdiler[kol]=i;
+    kutu.append(el("label",{},i,el("span",{},el("b",{text:KOLON_AD[kol]}),el("small",{text:bilgi[kol]}))));
+  });
+  k.append(kutu);
+  const mod=el("select",{style:"max-width:520px"},el("option",{value:"tutar",text:"Yazılan tüm tutarlar sayılır (iptal ve gelmedi hariç) — basit"}),el("option",{value:"geldi",text:"Sadece \"Geldi\" işaretlenenler sayılır — durum sütununu açın"}));
+  mod.value=ayar.hakedis_modu||"tutar";
+  k.append(el("label",{text:"Toplam ve hakediş nasıl hesaplansın?"}),mod);
+  const hata=el("div",{class:"hata"});
+  k.append(hata,el("button",{class:"btn ana",text:"Kaydet",onclick:async()=>{
+    try{
+      ayar=await api("/ayarlar","PUT",{cizelge_kolon:Object.keys(girdiler).filter(x=>girdiler[x].checked).join(","),hakedis_modu:mod.value});
+      hata.textContent=""; bildir("Kaydedildi"); takvimCiz(); ustBilgiYukle();
+    }catch(e){ hata.textContent=e.message; }
+  }}));
 }
 async function ayarYedek(k){
   let y; try{ y=await api("/yedek"); }catch(e){ k.append(el("p",{class:"hata",text:e.message})); return; }
@@ -1015,7 +1182,10 @@ async function guncelle(){
 setInterval(()=>{ fetch("/api/ping").catch(()=>{}); },20000);
 fetch("/api/ping").catch(()=>{});
 yukle().then(()=>guncellemeKontrol()).catch(e=>{ document.body.prepend(el("div",{class:"hata",style:"padding:16px",text:"Yüklenemedi: "+e.message})); });
-setInterval(()=>{ if(sayfa==="takvim" && !$("#perde").classList.contains("acik")) gunYukle().catch(()=>{}); },60000);
+setInterval(()=>{
+  const a=document.activeElement;
+  if(sayfa==="takvim" && !$("#perde").classList.contains("acik") && !(a&&a.closest&&a.closest("#liste"))) gunYukle().catch(()=>{});
+},60000);
 </script>
 </body>
 </html>

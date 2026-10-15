@@ -41,7 +41,12 @@ SESLE RANDEVU
   Randevu formu hazir dolu acilir, kontrol edip Kaydet'e basilir. Yazarak da calisir.
 - Ses tanima icin internet ve mikrofon izni gerekir (Edge/Chrome'un sesi cozmesi internetten olur).
 
-RANDEVU LISTESI: "Cizelge" gorunumu (varsayilan) sutun sutun tablodur, "Takvim" gorunumu saat izgarasidir.
+CIZELGE (varsayilan): her berber bir sutun; altinda Saat, Musteri, Tutar (elle yazilir). En alttaki bos
+satira yazip Enter'a basin; hucreye tiklayip duzeltin. En altta berber basina Toplam gorunur; PIN
+girince Usta hakedisi, avans, odenecek ve dukkan payi da gorunur.
+Telefon / Hizmet / Sure / Durum / Not sutunlari Ayarlar > Gorunum'den istege bagli acilir.
+Ayni yerden "tum yazilan tutarlar sayilsin" veya "sadece Geldi isaretliler" secilir.
+"Takvim" gorunumu saat izgarasidir.
 
 TAKVIM
 - Sol menuden bir berbere tiklayinca sadece onun takvimi gorunur (tekrar tiklayinca hepsi).
