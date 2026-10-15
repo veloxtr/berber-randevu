@@ -200,15 +200,15 @@ table.defter tfoot td.sag{text-align:right;white-space:nowrap}
 table.defter tfoot tr.t-yontem td,table.defter tfoot tr.t-bekl td{font-weight:600;font-size:12.5px;background:var(--z2);padding:5px 6px}
 table.defter tfoot tr.t-bekl td{color:var(--amber)}
 table.defter tfoot tr.t-dukkan td{font-weight:700}
-table.defter tr.satir-ctrl td{background:var(--z3);height:auto}
+table.defter tr.satir-ctrl td{background:var(--z3);height:38px;overflow:visible}
 table.defter td.c-tutar.sag{padding-right:6px}
 .tut-al{border:0;background:var(--ana);color:#fff;border-radius:9px;padding:4px 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
 .tut-al:hover{filter:brightness(1.1)}
 .yz{display:inline-block;border-radius:6px;padding:0 5px;font-size:11px;font-weight:800;margin-left:4px;vertical-align:middle}
 .yz.nakit{background:var(--yesil-acik);color:var(--yesil-yazi)}
 .yz.havale{background:var(--ana-acik);color:var(--ana)}
-.satir-islem{display:flex;gap:4px;justify-content:center;padding:4px 2px}
-.satir-islem button{border:1px solid var(--cizgi);background:var(--kart);color:var(--yazi);border-radius:7px;padding:0 7px;line-height:22px;font-size:12px}
+.satir-islem{display:flex;gap:4px;justify-content:center;align-items:center;padding:5px 2px;min-height:30px}
+.satir-islem button{border:1px solid var(--cizgi);background:var(--kart);color:var(--yazi);border-radius:7px;padding:0 7px;height:24px;line-height:22px;font-size:12px;white-space:nowrap}
 .satir-islem button:hover{border-color:var(--ana);color:var(--ana)}
 table.defter td.kilitli{padding:0 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.defter tr.kilitli-satir:hover td{background:var(--ana-acik)}
@@ -389,7 +389,7 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
           </div>
           <div class="cizelge-sar" id="listeSar" style="max-height:none"><table class="cizelge defter" id="liste"></table></div>
           <div class="satir-ekle" id="satirEkleKutu"><button class="btn" type="button" id="satirEkle">＋ Satır ekle</button><span class="not" style="margin:0">Boş satırlara yazın; yer yetmezse satır ekleyin.</span></div>
-          <div class="hak-ac" id="hakAc"><button class="btn kucuk" type="button" onclick="hakGoster()">🔒 Usta hakedişini göster (PIN)</button></div>
+          <div class="hak-ac" id="hakAc"><button class="btn kucuk" id="hakBtn" type="button" onclick="hakGoster()">🔒 Usta hakedişini göster (PIN)</button></div>
           <div class="takvim" id="takvimSar"><div class="izgara" id="izgara"></div></div>
         </div>
         <button class="buyuk" id="yeniRandevu">＋ Yeni randevu ekle</button>
@@ -819,7 +819,8 @@ const KOLON_AD = {telefon:"Telefon",hizmet:"Hizmet",sure:"Süre (dk)",durum:"Dur
 let odak=null, gunAvans={}, gunMaas={}, ayakEl=null;
 function sayilir(r){ return !!r.odeme && r.durum!=="gelmedi" && r.durum!=="iptal"; }
 function kolonlar(){ return (ayar.cizelge_kolon||"").split(",").filter(k=>KOLON_AD[k]); }
-function oranVar(b){ return !!token && b.hakedis_oran!==undefined && b.hakedis_oran!==null; }
+let hakGizli=false;
+function oranVar(b){ return !!token && !hakGizli && b.hakedis_oran!==undefined && b.hakedis_oran!==null; }
 function randevuGovde(r,ek){ return {berber_id:r.berber_id,tarih:r.tarih,baslangic:r.baslangic,musteri_ad:r.musteri_ad,telefon:r.telefon,hizmetler:r.hizmetler,sure_dk:r.sure_dk,ucret:r.ucret,odeme:r.odeme||"",durum:r.durum,notu:r.notu,...ek}; }
 let yeniKilit=false;
 async function yeniKaydet(b,h){
@@ -972,8 +973,8 @@ function listeCiz(){
   t.append(tb);
   ayakEl=el("tfoot"); t.append(ayakEl); ayakCiz();
   if(odak!==null&&ilkBos[odak]){ const f=ilkBos[odak].musteri; odak=null; setTimeout(()=>f.focus(),30); } else odak=null;
-  const kilit=$("#hakAc");
-  if(kilit) kilit.style.display=(token&&gor.some(oranVar))?"none":"";
+  const hb=$("#hakBtn");
+  if(hb){ const acik=gor.some(oranVar); hb.textContent=acik?"🙈 Hakedişi gizle":"🔒 Usta hakedişini göster"+(token?"":" (PIN)"); hb.onclick=acik?hakKapat:hakGoster; }
 }
 /* ---------- ödeme alma (traştan sonra) ---------- */
 let oRand=null, oYontem="";
@@ -1006,8 +1007,10 @@ $("#oGeriAl").onclick=async()=>{
   catch(e){ $("#oHata").textContent=e.message; }
 };
 document.addEventListener("keydown",e=>{ if(e.key==="Enter"&&$("#oPerde").classList.contains("acik")) $("#oKaydet").click(); });
+function hakKapat(){ hakGizli=true; listeCiz(); }
 async function hakGoster(){
   if(!token && !(await girisIste())) return;
+  hakGizli=false;
   berberler=await api("/berberler"); yanCiz(); takvimCiz();
 }
 function takvimCiz(){
