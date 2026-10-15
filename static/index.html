@@ -122,18 +122,20 @@ table.cizelge td.saat{font-weight:750;white-space:nowrap;font-variant-numeric:ta
 .mini.r:hover{background:#fde7d3}
 
 /* çizelge: berber sütunları */
-table.defter{min-width:0;width:100%;border-collapse:separate;border-spacing:0}
+table.defter{min-width:0;width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:13.5px}
 table.defter th.berber-ust{font-size:15px;color:var(--yazi);text-align:center;border-top:4px solid var(--c);padding:10px 8px;border-left:2px solid #c9cde4}
 table.defter th.alt{font-size:12px;top:var(--h1,42px)}
-table.defter td{padding:0;height:38px}
+table.defter td{padding:0;height:34px;overflow:hidden}
 table.defter td.grup{border-left:2px solid #c9cde4}
-table.defter input,table.defter select{border:0;background:transparent;border-radius:0;padding:8px 9px;width:100%;height:100%;min-width:0}
+table.defter input,table.defter select{border:0;background:transparent;border-radius:0;padding:7px 5px;width:100%;height:100%;min-width:0;font-size:inherit;text-overflow:ellipsis}
 table.defter input:focus,table.defter select:focus{background:#fff;outline:2px solid var(--ana);outline-offset:-2px}
-table.defter td.c-saat{width:112px}
-table.defter td.c-musteri{min-width:150px}
-table.defter td.c-tutar{min-width:112px}
+table.defter td.c-saat input{text-align:center;font-variant-numeric:tabular-nums;padding-left:1px;padding-right:1px;text-overflow:clip}
+
 table.defter td.c-tutar input{text-align:right;font-weight:700}
-table.defter td.c-islem{width:44px;text-align:center}
+table.defter td.c-islem{text-align:center}
+table.defter th.berber-ust{padding:8px 4px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.defter th.alt{padding:6px 4px;font-size:11.5px;overflow:hidden;white-space:nowrap}
+table.defter tfoot td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.defter tbody tr{cursor:default}
 table.defter tr.yeni-satir td{background:#fcfcff}
 table.defter tr.yeni-satir input::placeholder{color:#b4b8cc}
@@ -143,8 +145,17 @@ table.defter tbody tr:nth-child(even) td{background:#fafbff}
 table.defter tr.iptal input{text-decoration:line-through;opacity:.5}
 table.defter tr.gelmedi input{color:#b45309}
 .nokta-b.k{vertical-align:middle}
-.mini.ac{padding:2px 8px;font-weight:700;color:var(--soluk)}
-table.defter tfoot td{padding:8px 10px;background:#f4f5fb;border-top:2px solid #d9dcec;font-variant-numeric:tabular-nums}
+.mini.ac{padding:0 5px;margin:0;font-weight:700;color:var(--soluk);line-height:20px}
+.satir-ekle{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.uyg.genis{max-width:none}
+.govde.menu-ust{grid-template-columns:minmax(0,1fr)}
+.govde.menu-ust .yan{position:static;padding:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.govde.menu-ust .yan .etiket,.govde.menu-ust .yan .ipucu{display:none}
+.govde.menu-ust #berberListe{display:flex;flex-wrap:wrap;gap:6px}
+.govde.menu-ust .oge{padding:8px 12px;border:1px solid var(--cizgi)}
+.govde.menu-ust .oge .kucuk{display:none}
+.govde.menu-ust .oge.aktif{border-color:var(--ana)}
+table.defter tfoot td{padding:7px 6px;background:#f4f5fb;border-top:2px solid #d9dcec;font-variant-numeric:tabular-nums}
 table.defter tfoot tr.t-toplam td{font-size:15px;font-weight:800;border-top:2px solid #b9bdd6}
 table.defter tfoot tr.t-hak td{background:var(--yesil-acik);color:#166534;font-weight:800}
 table.defter tfoot tr.t-av td{background:#fff7ed;color:#b45309;font-weight:700}
@@ -297,7 +308,8 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
             <span class="gor-sec" id="gorSec"><button type="button" data-g="liste">Çizelge</button><button type="button" data-g="takvim">Takvim</button></span>
             <button class="btn mik" id="sesAc" type="button">🎤 Sesle randevu</button>
           </div>
-          <div class="cizelge-sar" id="listeSar"><table class="cizelge defter" id="liste"></table></div>
+          <div class="cizelge-sar" id="listeSar" style="max-height:none"><table class="cizelge defter" id="liste"></table></div>
+          <div class="satir-ekle" id="satirEkleKutu"><button class="btn" type="button" id="satirEkle">＋ Satır ekle</button><span class="not" style="margin:0">Boş satırlara yazın; yer yetmezse satır ekleyin.</span></div>
           <div class="hak-ac" id="hakAc"><button class="btn kucuk" type="button" onclick="hakGoster()">🔒 Usta hakedişini göster (PIN)</button></div>
           <div class="takvim" id="takvimSar"><div class="izgara" id="izgara"></div></div>
         </div>
@@ -626,7 +638,8 @@ async function yeniKaydet(b,h){
   if(yeniKilit) return;
   const musteri=h.musteri.value.trim(), tutar=+h.tutar.value||0;
   if(!musteri && !tutar) return;
-  let saat=h.saat.value;
+  let saat=saatNorm(h.saat.value);
+  if(h.saat.value.trim() && !saat){ bildir("Saati 17:30 gibi yazın"); return; }
   if(!saat){ const n=new Date(); const t=gun===bugunStr()?Math.min(Math.max(n.getHours()*60+n.getMinutes(),dk(ayar.acilis)),dk(ayar.kapanis)-1):dk(ayar.acilis); saat=saatStr(t); }
   const kisi=(opt,k)=>opt[k]?opt[k].value.trim():"";
   yeniKilit=true;
@@ -645,37 +658,62 @@ function ayakCiz(){
     const tr=el("tr",{class:sinif});
     gor.forEach(b=>{
       if(!goster(b)){ tr.append(el("td",{colspan:3+dolgu,class:"grup"})); return; }
-      tr.append(el("td",{colspan:2,class:"grup",text:etiketFn(b)}),el("td",{class:"sag",text:degerFn(b)}),el("td",{colspan:dolgu}));
+      tr.append(el("td",{colspan:2,class:"grup",text:etiketFn(b)}),el("td",{class:"sag",colspan:2,text:degerFn(b)}));
+      if(opt.length) tr.append(el("td",{colspan:opt.length}));
     });
     ayakEl.append(tr);
   };
   const lis=b=>randevular.filter(r=>r.berber_id===b.id&&sayilir(r));
   const top=b=>lis(b).reduce((t,r)=>t+r.ucret,0);
   const av=b=>gunAvans[b.id]||0;
-  satirYap("t-toplam",b=>"Toplam ("+lis(b).length+" kişi)",b=>TL(top(b)),()=>true);
-  satirYap("t-hak",b=>"Usta hakedişi %"+b.hakedis_oran,b=>TL(top(b)*b.hakedis_oran/100),oranVar);
-  satirYap("t-av",b=>"Avans (kasadan aldı)",b=>"− "+TL(av(b)),b=>oranVar(b)&&av(b)>0);
-  satirYap("t-hak",b=>"Ödenecek (hakediş − avans)",b=>TL(top(b)*b.hakedis_oran/100-av(b)),b=>oranVar(b)&&av(b)>0);
+  satirYap("t-toplam",b=>"Toplam · "+lis(b).length+" kişi",b=>TL(top(b)),()=>true);
+  satirYap("t-hak",b=>"Hakediş %"+b.hakedis_oran,b=>TL(top(b)*b.hakedis_oran/100),oranVar);
+  satirYap("t-av",b=>"Avans (kasa)",b=>"− "+TL(av(b)),b=>oranVar(b)&&av(b)>0);
+  satirYap("t-hak",b=>"Ödenecek",b=>TL(top(b)*b.hakedis_oran/100-av(b)),b=>oranVar(b)&&av(b)>0);
   satirYap("t-dukkan",b=>"Dükkan payı",b=>TL(top(b)-top(b)*b.hakedis_oran/100),oranVar);
 }
 function listeBerberleri(){ return filtre ? berberler.filter(b=>b.id===filtre) : berberler; }
+const MIN_SATIR=10;
+let ekstraSatir=0, ekstraGun=null;
+const KOL_GEN={telefon:96,hizmet:92,sure:46,durum:78,not:100};
+function saatNorm(v){
+  v=String(v||"").trim(); if(!v) return "";
+  const d=v.replace(/\D/g,"");
+  let h,m;
+  if(/^\d{1,2}[:.]\d{2}$/.test(v)){ [h,m]=v.split(/[:.]/).map(Number); }
+  else if(d.length===1||d.length===2){ h=+d; m=0; }
+  else if(d.length===3){ h=+d.slice(0,1); m=+d.slice(1); }
+  else if(d.length===4){ h=+d.slice(0,2); m=+d.slice(2); }
+  else return null;
+  if(h>23||m>59) return null;
+  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0");
+}
+function saatKutusu(deger,ph){
+  const i=el("input",{type:"text",inputmode:"numeric",maxlength:5,placeholder:ph||"",value:deger||"",autocomplete:"off"});
+  i.addEventListener("input",()=>{ let d=i.value.replace(/\D/g,"").slice(0,4); if(d.length>=3) d=d.slice(0,d.length-2)+":"+d.slice(-2); if(i.value!==d) i.value=d; });
+  return i;
+}
+$("#satirEkle").onclick=()=>{ ekstraSatir++; listeCiz(); };
 function listeCiz(){
+  if(ekstraGun!==gun){ ekstraGun=gun; ekstraSatir=0; }
   const t=$("#liste"); t.innerHTML=""; t.className="cizelge defter";
   const gor=listeBerberleri(), opt=kolonlar();
   const kolSayi=3+opt.length+1;
-  const h1=el("tr",{}), h2=el("tr",{});
+  const h1=el("tr",{}), h2=el("tr",{}), cg=el("colgroup");
   gor.forEach(b=>{
     h1.append(el("th",{class:"berber-ust",colspan:kolSayi,style:"--c:"+renk(b.id)},el("span",{class:"nokta-b k",style:"background:"+renk(b.id)}),b.ad));
-    [["Saat","grup"],["Müşteri",""],["Tutar (₺)","sag"],...opt.map(k=>[KOLON_AD[k],""]),["",""]].forEach(([k,c],i)=>h2.append(el("th",{class:"alt "+c+(i===0?" gr":""),text:k,style:i===0?"border-left:2px solid #c9cde4":""})));
+    cg.append(el("col",{style:"width:56px"}),el("col",{}),el("col",{style:"width:62px"}),...opt.map(k=>el("col",{style:"width:"+KOL_GEN[k]+"px"})),el("col",{style:"width:22px"}));
+    [["Saat"],["Müşteri"],["Tutar ₺"],...opt.map(k=>[KOLON_AD[k]]),[""]].forEach(([k],i)=>h2.append(el("th",{class:"alt"+(k==="Tutar ₺"?" sag":""),text:k,style:i===0?"border-left:2px solid #c9cde4":""})));
   });
-  h2.querySelectorAll("th").forEach(th=>th.classList.add("alt"));
+  t.append(cg);
   t.append(el("thead",{},h1,h2));
-  t.style.minWidth=(gor.length*(366+opt.length*120))+"px";
+  const sabit=gor.length*(56+62+22+opt.reduce((x,k)=>x+KOL_GEN[k],0)+70);
+  t.style.minWidth=sabit+"px";
   requestAnimationFrame(()=>t.style.setProperty("--h1",h1.offsetHeight+"px"));
   const tb=el("tbody");
   const per=gor.map(b=>randevular.filter(r=>r.berber_id===b.id).sort((x,y)=>x.baslangic.localeCompare(y.baslangic)));
-  const satirSay=Math.max(...per.map(x=>x.length),0)+1;
-  const yeniHucre={};
+  const satirSay=Math.max(MIN_SATIR,Math.max(...per.map(x=>x.length),0)+1)+ekstraSatir;
+  const ilkBos={};
   for(let j=0;j<satirSay;j++){
     const tr=el("tr",{});
     gor.forEach((b,bi)=>{
@@ -683,17 +721,17 @@ function listeCiz(){
       const hucre=(sinif,...c)=>el("td",{class:sinif},...c);
       if(r){
         const gir=(tip,deger,anahtar,eklenti={})=>{
-          const i=el("input",{type:tip,value:deger,...eklenti});
+          const i=anahtar==="baslangic"?saatKutusu(deger):el("input",{type:tip,value:deger,...eklenti});
           i.addEventListener("change",()=>{
             let v=i.value;
             if(anahtar==="ucret") v=+v||0; else if(anahtar==="sure_dk") v=Math.max(5,+v||(+ayar.adim_dk));
             else if(anahtar==="musteri_ad"&&!String(v).trim()){ i.value=r.musteri_ad; return; }
-            else if(anahtar==="baslangic"&&!v){ i.value=r.baslangic; return; }
+            else if(anahtar==="baslangic"){ const n=saatNorm(v); if(!n){ i.value=r.baslangic; bildir("Saati 17:30 gibi yazın"); return; } i.value=v=n; }
             satirKaydet(r,{[anahtar]:typeof v==="string"&&anahtar!=="baslangic"?v.trim():v});
           });
           return i;
         };
-        const hs=[hucre("c-saat grup",gir("time",r.baslangic,"baslangic")),hucre("c-musteri",gir("text",r.musteri_ad,"musteri_ad",{autocomplete:"off"})),hucre("c-tutar",gir("number",r.ucret||"","ucret",{min:0,step:1,inputmode:"decimal",placeholder:"0"}))];
+        const hs=[hucre("c-saat grup",gir("time",r.baslangic,"baslangic")),hucre("c-musteri",gir("text",r.musteri_ad,"musteri_ad",{autocomplete:"off",title:r.musteri_ad})),hucre("c-tutar",gir("number",r.ucret||"","ucret",{min:0,step:1,inputmode:"decimal",placeholder:"0"}))];
         opt.forEach(k=>{
           if(k==="telefon") hs.push(hucre("",gir("tel",r.telefon,"telefon")));
           else if(k==="not") hs.push(hucre("",gir("text",r.notu,"notu")));
@@ -708,34 +746,31 @@ function listeCiz(){
         hs.push(hucre("c-islem",el("button",{class:"mini ac",type:"button",title:"Ayrıntı / sil",text:"⋯",onclick:()=>randevuAc(r)})));
         tr.className=r.durum;
         hs.forEach(x=>tr.append(x));
-      }else if(j===liste.length){
-        tr.classList.add("yeni-satir");
-        const h={};
-        const mk=(tip,ph,eklenti={})=>{ const i=el("input",{type:tip,placeholder:ph,"data-yeni":b.id,autocomplete:"off",...eklenti}); return i; };
-        h.saat=mk("time",""); h.musteri=mk("text","+ Müşteri adı"); h.tutar=mk("number","Tutar",{min:0,step:1,inputmode:"decimal"});
-        h.musteri.classList.add("yeni-musteri");
+      }else{
+        // boş satır = yazmaya hazır giriş satırı
+        const h={}, anahtar=b.id+"-"+j;
+        const mk=(i)=>{ i.setAttribute("data-yeni",anahtar); i.setAttribute("autocomplete","off"); return i; };
+        h.saat=mk(saatKutusu("")); h.musteri=mk(el("input",{type:"text",placeholder:j===liste.length?"+ Müşteri":""})); h.tutar=mk(el("input",{type:"number",min:0,step:1,inputmode:"decimal",placeholder:j===liste.length?"Tutar":""}));
         const hs=[hucre("c-saat grup",h.saat),hucre("c-musteri",h.musteri),hucre("c-tutar",h.tutar)];
         opt.forEach(k=>{
-          if(k==="telefon"){ h.telefon=mk("tel","Telefon"); hs.push(hucre("",h.telefon)); }
-          else if(k==="not"){ h.not=mk("text","Not"); hs.push(hucre("",h.not)); }
+          if(k==="telefon"){ h.telefon=mk(el("input",{type:"tel"})); hs.push(hucre("",h.telefon)); }
+          else if(k==="not"){ h.not=mk(el("input",{type:"text"})); hs.push(hucre("",h.not)); }
           else hs.push(hucre("bos-h"));
         });
-        hs.push(hucre("c-islem",el("button",{class:"mini g",type:"button",title:"Ekle",text:"+",onclick:()=>yeniKaydet(b,h)})));
+        hs.push(hucre("c-islem"));
         hs.forEach(x=>tr.append(x));
         Object.values(h).forEach(i=>{
           i.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); yeniKaydet(b,h); } });
-          i.addEventListener("focusout",e=>{ const n=e.relatedTarget; if(n&&n.getAttribute&&n.getAttribute("data-yeni")==String(b.id)) return; if(n&&n.classList&&n.classList.contains("g")&&n.closest("tr")===tr) return; yeniKaydet(b,h); });
+          i.addEventListener("focusout",e=>{ const n=e.relatedTarget; if(n&&n.getAttribute&&n.getAttribute("data-yeni")===anahtar) return; yeniKaydet(b,h); });
         });
-        yeniHucre[b.id]=h;
-      }else{
-        for(let c=0;c<kolSayi;c++) tr.append(el("td",{class:"bos-h"+(c===0?" grup":"")}));
+        if(ilkBos[b.id]===undefined) ilkBos[b.id]=h;
       }
     });
     tb.append(tr);
   }
   t.append(tb);
   ayakEl=el("tfoot"); t.append(ayakEl); ayakCiz();
-  if(odak!==null&&yeniHucre[odak]){ const f=yeniHucre[odak].musteri; odak=null; setTimeout(()=>f.focus(),30); } else odak=null;
+  if(odak!==null&&ilkBos[odak]){ const f=ilkBos[odak].musteri; odak=null; setTimeout(()=>f.focus(),30); } else odak=null;
   const kilit=$("#hakAc");
   if(kilit) kilit.style.display=(token&&gor.some(oranVar))?"none":"";
 }
@@ -748,6 +783,9 @@ function takvimCiz(){
   $("#listeSar").style.display = gorunum==="liste"?"":"none";
   $("#takvimSar").style.display = gorunum==="takvim"?"":"none";
   $("#hakAc").style.display = gorunum==="liste"?"":"none";
+  $("#satirEkleKutu").style.display = gorunum==="liste"?"":"none";
+  $(".uyg").classList.toggle("genis",berberler.length>=4);
+  document.querySelector(".govde").classList.toggle("menu-ust",berberler.length>=4);
   listeCiz();
   const d = strTarih(gun);
   $("#tarihBaslik").textContent = d.getDate()+" "+AY[d.getMonth()]+" "+d.getFullYear()+", "+GUN[d.getDay()];
