@@ -79,7 +79,7 @@ EXE URETMEK (Python kurmadan calisan tek dosya)
    (siyah konsol yok); pencereyi kapatinca program tamamen kapanir.
    berber.db exe'nin yanina olusur. Pencere icin Edge veya Chrome kurulu olmalidir
    (Windows 10/11'de Edge zaten vardir).
-   Telefon icin: exe kisayolunun Ozellikler > Hedef satirinin sonuna  --ag  ekleyin.
+   Telefon icin: exe kisayolunun Ozellikler > Hedef satirinin sonuna  --ag (artık gerekmez; Ayarlar > Telefon)  ekleyin.
    Telefon adresi Ayarlar sekmesinde yazar. Telefon calissin diye pencere acik kalmali.
 4) ONLINE GUNCELLEME: program acilirken GitHub'daki son surume bakar. Yeni surum varsa ustte
    sari bir serit cikar, "Simdi guncelle"ye basinca yeni exe iner, program kendini yenileyip
@@ -92,4 +92,4 @@ EXE URETMEK (Python kurmadan calisan tek dosya)
 ILERIDE
 - Sunucu (app.py) ve arayuz (static/index.html) ayridir; internete tasimak veya
   WhatsApp hatirlatma eklemek icin yapi hazirdir.
-- Guvenlik: --ag modu sifre istemez, sadece guvendiginiz ag icin kullanin.
+- Guvenlik: --ag (artık gerekmez; Ayarlar > Telefon) modu sifre istemez, sadece guvendiginiz ag icin kullanin.

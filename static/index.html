@@ -487,6 +487,7 @@ tr.detay table th,tr.detay table td{padding:6px 8px;font-size:13px}
             <button class="btn" data-a="dukkan">Dükkan</button>
             <button class="btn" data-a="gorunum">Görünüm</button>
             <button class="btn" data-a="yedek">Yedek</button>
+            <button class="btn" data-a="telefon">Telefon</button>
             <button class="btn" data-a="guvenlik">Güvenlik</button>
             <button class="btn" data-a="hakkinda">Hakkında</button>
             <span style="flex:1"></span>
@@ -1464,6 +1465,7 @@ async function ayarCiz(){
   else if(ayarSekme==="dukkan") ayarDukkan(k);
   else if(ayarSekme==="gorunum") ayarGorunum(k);
   else if(ayarSekme==="yedek") await ayarYedek(k);
+  else if(ayarSekme==="telefon") await ayarTelefon(k);
   else if(ayarSekme==="guvenlik") ayarGuvenlik(k);
   else await ayarHakkinda(k);
 }
@@ -1612,11 +1614,29 @@ function ayarGuvenlik(k){
     }})),
     el("p",{class:"not",text:"PIN'i unutursanız: programı kapatın, programın bulunduğu klasöre PIN_SIFIRLA.txt adlı boş bir dosya koyup programı yeniden açın. PIN silinir, yenisini belirlersiniz. Randevu verileri etkilenmez."}));
 }
+async function ayarTelefon(k){
+  let b={}; try{ b=await api("/bilgi"); }catch{}
+  const ac=!!b.ag;
+  const adr=(t,a)=>el("div",{class:"not",style:"margin:6px 0"},el("b",{text:t+": "}),el("span",{text:a,style:"user-select:all;font-weight:700"}));
+  k.append(el("p",{text:ac?"📱 Telefon / dışarıdan erişim AÇIK":"📱 Telefon / dışarıdan erişim KAPALI"}));
+  k.append(el("div",{class:"bar"},el("button",{class:"btn "+(ac?"tehlike":"ana"),text:ac?"Erişimi kapat":"Erişimi aç",onclick:async()=>{
+    try{ ayar=await api("/ayarlar","PUT",{ag_erisim:ac?"0":"1"}); ayarCiz(); bildir(ac?"Telefon erişimi kapandı":"Telefon erişimi açıldı"); }catch(e){ bildir(e.message); } }})));
+  if(ac){
+    k.append(adr("Aynı Wi-Fi'daki telefon",b.telefon_adresi));
+    k.append(b.tailscale_adresi?adr("Dışarıdan (Tailscale ile)",b.tailscale_adresi):el("p",{class:"not",text:"Tailscale bu bilgisayarda görünmüyor. Dışarıdan erişim için aşağıdaki adımları yapın."}));
+    k.append(el("p",{class:"not",text:"Telefonun çalışması için bu bilgisayarda program açık olmalı. Gelir, hakediş, rapor gibi bölümler telefonda da PIN ister."}));
+  }
+  k.append(el("h3",{text:"Evden / dışarıdan erişim (iPhone ve Android) — Tailscale"}));
+  ["1) Dükkan bilgisayarına tailscale.com/download adresinden Tailscale'i kurun ve Google/Microsoft hesabıyla giriş yapın.",
+   "2) Telefona App Store / Play Store'dan Tailscale'i kurun ve AYNI hesapla giriş yapın.",
+   "3) Bu sayfada 'Erişimi aç'a basın. Yukarıda 'Dışarıdan (Tailscale ile)' adresi görünür.",
+   "4) Telefonda Tailscale açıkken (bağlı), Safari/Chrome'a o adresi yazın. 'Ana ekrana ekle' ile uygulama gibi kullanırsınız.",
+   "Not: Bilgisayar Windows güvenlik duvarı sorarsa 'Erişime izin ver' deyin. Sesli komut telefonda (http adreste) çalışmayabilir; randevuyu yazarak girebilirsiniz."
+  ].forEach(t=>k.append(el("p",{class:"not",text:t})));
+}
 async function ayarHakkinda(k){
   let b={}, g=null; try{ b=await api("/bilgi"); }catch{}
   k.append(el("p",{text:"Sürüm "+(b.surum||"")}));
-  k.append(el("p",{class:"not",text:b.ag?("Telefon erişimi AÇIK. Aynı Wi-Fi'deki telefonda şu adresi açın: "+b.telefon_adresi+"  (telefonun çalışması için bu pencere açık kalmalı.)")
-    :"Telefon erişimi kapalı. Açmak için programı kısayolundaki hedefin sonuna  --ag  ekleyerek başlatın."}));
   const d=el("span",{class:"not"});
   k.append(el("div",{class:"bar"},el("button",{class:"btn",text:"Güncellemeyi kontrol et",onclick:async()=>{
     d.textContent="Kontrol ediliyor…"; g=await guncellemeKontrol(true);

@@ -23,7 +23,7 @@ import urllib.request
 import webbrowser
 from datetime import datetime, timedelta
 
-from flask import Flask, g, jsonify, request, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_from_directory
 from werkzeug.serving import make_server
 
 if getattr(sys, "frozen", False):  # PyInstaller exe
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS gun_sonu (
 """
 
 VARSAYILAN_AYAR = {"acilis": "09:00", "kapanis": "21:00", "adim_dk": "30", "dukkan_adi": "Berber Randevu",
-                   "yedek_adet": "14", "cizelge_kolon": "", "kapat_sor": "1", "dukkan_logo": ""}
+                   "yedek_adet": "14", "cizelge_kolon": "", "kapat_sor": "1", "dukkan_logo": "", "ag_erisim": "0"}
 CIZELGE_KOLONLAR = ("telefon", "hizmet", "sure", "durum", "not")
 
 
@@ -516,6 +516,8 @@ def ayar_kaydet():
         yeni["cizelge_kolon"] = ",".join(k for k in CIZELGE_KOLONLAR if k in [str(x).strip() for x in liste])
     if "kapat_sor" in v:
         yeni["kapat_sor"] = "1" if str(v["kapat_sor"]) in ("1", "true", "True") else "0"
+    if "ag_erisim" in v:
+        yeni["ag_erisim"] = "1" if str(v["ag_erisim"]) in ("1", "true", "True") else "0"
     if "dukkan_logo" in v:
         lg = str(v["dukkan_logo"] or "")
         if lg and not re.match(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$", lg):
@@ -1132,14 +1134,54 @@ def yerel_ip():
         return "127.0.0.1"
 
 
+def tailscale_ip():
+    """Bilgisayarda Tailscale kuruluysa 100.x.y.z adresini bulur."""
+    try:
+        for ai in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = ai[4][0]
+            p = ip.split(".")
+            if p[0] == "100" and 64 <= int(p[1]) <= 127:
+                return ip
+    except OSError:
+        pass
+    try:  # bazı sistemlerde ana makine adı bulunmaz: arayüz adreslerine bak
+        import subprocess
+        out = subprocess.run(["ipconfig"], capture_output=True, text=True, timeout=3,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        for m in re.findall(r"(\d+\.\d+\.\d+\.\d+)", out):
+            p = m.split(".")
+            if p[0] == "100" and 64 <= int(p[1]) <= 127:
+                return m
+    except Exception:
+        pass
+    return ""
+
+
+@app.before_request
+def uzak_erisim_kontrol():
+    """Bu bilgisayar dışından gelen istekler, 'Telefon erişimi' ayarı kapalıysa reddedilir."""
+    if request.remote_addr in ("127.0.0.1", "::1", None):
+        return None
+    try:
+        acik = ayarlar().get("ag_erisim") == "1"
+    except Exception:
+        acik = False
+    if not acik:
+        return Response("Telefon erişimi kapalı. Programda Ayarlar > Telefon bölümünden açın.", 403,
+                        mimetype="text/plain; charset=utf-8")
+    return None
+
+
 @app.get("/api/bilgi")
 def bilgi():
     port = app.config.get("PORT", 5050)
+    ts = tailscale_ip()
     return jsonify({
         "surum": SURUM,
-        "ag": bool(app.config.get("AG")),
+        "ag": ayarlar().get("ag_erisim") == "1",
         "port": port,
         "telefon_adresi": f"http://{yerel_ip()}:{port}",
+        "tailscale_adresi": f"http://{ts}:{port}" if ts else "",
     })
 
 
@@ -1392,10 +1434,10 @@ def main():
         pass
     threading.Thread(target=otomatik_yedek_dongusu, daemon=True).start()   # açılışta + günde en az bir yedek
     threading.Thread(target=guncelleme_kontrol, daemon=True).start()
-    srv = make_server("0.0.0.0" if a.ag else "127.0.0.1", a.port, app, threaded=True)
+    srv = make_server("0.0.0.0", a.port, app, threaded=True)
     sunucu = threading.Thread(target=srv.serve_forever, daemon=True)
     sunucu.start()
-    print(f"Berber Randevu v{SURUM}: {url}" + ("  (telefon erişimi AÇIK)" if a.ag else ""))
+    print(f"Berber Randevu v{SURUM}: {url}" + (""))
 
     if a.tarayici_acma:
         sunucu.join()          # sadece sunucu (test / sunucu modu)
